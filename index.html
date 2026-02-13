@@ -3198,14 +3198,29 @@ function verifyGateTicket_(){
     const expAtMs = Number(t.expAtMs || 0);
     const usedAtMs = Number(t.usedAtMs || 0);
 
-    // accept tickets created for this uid OR (loose mode) any uid when empty
-    const ticketUid = String(t.uid || "");
-    if(ticketUid && myUid && ticketUid !== myUid){
-      showOverlay('접속 제한', '이 티켓은 다른 기기/세션에서 발급된 티켓이에요. 대시보드에서 다시 열어주세요.');
-      throw new Error('ticket uid mismatch');
-    }
+    // ✅ Session-key 방식(브라우저 저장소) 우선 확인
+    // - 대시보드에서 티켓 발급 시 sk(sessionKey)를 localStorage에 저장해두고,
+    //   수다방에서는 티켓의 sk와 localStorage sk가 일치할 때만 통과.
+    // - uid는 보조(레거시) 용도로만 사용 (익명 uid가 바뀌어도 sk가 유지되면 OK)
+    // gateKey already defined above (normalized)
+    const skKey = `sudaSessionKey:${gateKey}`;
+    const ticketSk = String(t.sk || "");
+    const storedSk = (()=>{ try{ return String(localStorage.getItem(skKey) || ""); }catch(_){ return ""; } })();
 
-    if(!expAtMs || expAtMs < now){
+    if(ticketSk){
+      if(!storedSk || storedSk !== ticketSk){
+        showOverlay('접속 제한', '이 티켓은 다른 기기/세션에서 발급된 티켓이에요. 대시보드에서 다시 열어주세요.');
+        throw new Error('ticket sessionKey mismatch');
+      }
+    }else{
+      // 레거시: sk가 없는 옛 티켓은 uid로만 검사 (호환)
+      const ticketUid = String(t.uid || "");
+      if(ticketUid && myUid && ticketUid !== myUid){
+        showOverlay('접속 제한', '이 티켓은 다른 기기/세션에서 발급된 티켓이에요. 대시보드에서 다시 열어주세요.');
+        throw new Error('ticket uid mismatch');
+      }
+    }
+if(!expAtMs || expAtMs < now){
       showOverlay('접속 제한', '입장 티켓이 만료되었어요. 대시보드에서 다시 열어주세요.');
       throw new Error('ticket expired');
     }
