@@ -3113,16 +3113,61 @@ function escapeHtml(s){
   async function verifyGateTicket_(){
     // prevent double-run in same page
     if (window.__sudaGateVerified) return window.__sudaGateVerified;
-    const gateRoomId = getQs_('gateRoom') || getQs_('room') || '';
+
+    const rawGate = getQs_('gateRoom') || getQs_('room') || '';
     const tid = getQs_('ticket') || '';
-    if (!gateRoomId || !tid){
+    if (!rawGate || !tid){
       showOverlay('접속 제한', '작업방 대시보드 버튼으로만 입장할 수 있어요.');
       throw new Error('missing gateRoom/ticket');
     }
+
     await window.FB.ensureAnonAuth();
     const myUid = window.FB.auth && window.FB.auth.currentUser ? String(window.FB.auth.currentUser.uid || '') : '';
-    const tref = window.FB.ref(window.FB.db, TICKET_PATH_(gateRoomId, tid));
-    const res = await window.FB.runTransaction(tref, (cur)=>{
+
+    // 후보 gateRoom 키들(버전/배포/이전 링크 혼재에 대비)
+    const pathRoom = (()=>{ try{ return String(location.pathname.split('/').filter(Boolean)[0] || ''); }catch(e){ return ''; }})();
+    const decodeGate = (()=>{ try{ return decodeURIComponent(String(rawGate)); }catch(e){ return String(rawGate); }})();
+    const cands = [
+      String(rawGate||'').trim(),
+      String(decodeGate||'').trim(),
+      __toRoomKey(String(rawGate||'').trim()),
+      __toRoomKey(String(decodeGate||'').trim()),
+      "magamm",
+      __toRoomKey(pathRoom)
+    ].filter(Boolean);
+
+    // uniq preserve order
+    const seen = new Set();
+    const uniq = [];
+    for (const c of cands){
+      if (!c) continue;
+      const k = String(c);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push(k);
+    }
+
+    let foundRoomId = "";
+    let ticketRef = null;
+
+    // 1) 먼저 "있는 티켓" 경로를 찾는다 (없으면 transaction은 항상 abort됨)
+    for (const rid of uniq){
+      const ref1 = window.FB.ref(window.FB.db, `rooms/${__toRoomKey(rid)}/access/sudaTickets/${String(tid)}`);
+      const snap = await window.FB.get(ref1);
+      if (snap && snap.exists && snap.exists()){
+        foundRoomId = rid;
+        ticketRef = ref1;
+        break;
+      }
+    }
+
+    if (!ticketRef){
+      showOverlay('접속 제한', '입장 티켓이 없거나 만료되었어요. 대시보드에서 다시 열어주세요.');
+      throw new Error('invalid/expired ticket (not found)');
+    }
+
+    // 2) 찾은 경로에서 "1회용 소비" 처리 (중복 부트/리로드 가드 포함)
+    const res = await window.FB.runTransaction(ticketRef, (cur)=>{
       if (!cur) return; // abort
       const now = Date.now();
       const exp = Number(cur.expAtMs || cur.expAt || 0) || 0;
@@ -3143,11 +3188,13 @@ function escapeHtml(s){
       if (myUid) cur.usedByUid = myUid;
       return cur;
     });
+
     if (!res || !res.committed){
       showOverlay('접속 제한', '입장 티켓이 없거나 만료되었어요. 대시보드에서 다시 열어주세요.');
       throw new Error('invalid/expired ticket');
     }
-    const out = { gateRoomId, tid };
+
+    const out = { gateRoomId: foundRoomId, tid };
     window.__sudaGateVerified = out;
     return out;
   }
