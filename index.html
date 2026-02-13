@@ -3111,141 +3111,95 @@ function escapeHtml(s){
   }
   const TICKET_PATH_ = (gateRoomId, tid) => `rooms/${__toRoomKey(gateRoomId)}/access/sudaTickets/${String(tid)}`;
   async function verifyGateTicket_(){
-    // prevent double-run / concurrent double boot
-    if (window.__sudaGateVerified) return window.__sudaGateVerified;
-    if (window.__sudaGateVerifyPromise) return await window.__sudaGateVerifyPromise;
+  // Single-flight: prevent double runs
+  if (window.__sudaGateVerifiedPromise) return await window.__sudaGateVerifiedPromise;
 
-    window.__sudaGateVerifyPromise = (async () => {
+  window.__sudaGateVerifiedPromise = (async () => {
+    const url = new URL(location.href);
+    const rawGate = (url.searchParams.get('gateRoom') || url.searchParams.get('room') || '').trim();
+    const tidRaw  = (url.searchParams.get('ticket') || '').trim();
 
-    const rawGate = getQs_('gateRoom') || getQs_('room') || '';
-    const tid = getQs_('ticket') || '';
-    if (!rawGate || !tid){
+    const gateRoom = String(rawGate || '');
+    const ticketId = String(tidRaw || '');
+
+    if(!gateRoom || !ticketId){
       showOverlay('접속 제한', '작업방 대시보드 버튼으로만 입장할 수 있어요.');
       throw new Error('missing gateRoom/ticket');
     }
 
+    const gateKey = __toRoomKey(gateRoom);
+    const cleanTid = __toRoomKey(ticketId); // ticket id is generated but sanitize anyway
+
     await window.FB.ensureAnonAuth();
-    const myUid = window.FB.auth && window.FB.auth.currentUser ? String(window.FB.auth.currentUser.uid || '') : '';
+    const myUid = window.FB.getUid?.() || (window.FB.auth?.currentUser?.uid || "");
 
-    // 후보 gateRoom 키들(버전/배포/이전 링크 혼재에 대비)
-    const pathRoom = (()=>{ try{ return String(location.pathname.split('/').filter(Boolean)[0] || ''); }catch(e){ return ''; }})();
-    const decodeGate = (()=>{ try{ return decodeURIComponent(String(rawGate)); }catch(e){ return String(rawGate); }})();
-    const cands = [
-      String(rawGate||'').trim(),
-      String(decodeGate||'').trim(),
-      __toRoomKey(String(rawGate||'').trim()),
-      __toRoomKey(String(decodeGate||'').trim()),
-      "magamm",
-      __toRoomKey(pathRoom)
-    ].filter(Boolean);
+    const db = window.FB.getDb();
 
-    // uniq preserve order
-    const seen = new Set();
-    const uniq = [];
-    for (const c of cands){
-      if (!c) continue;
-      const k = String(c);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      uniq.push(k);
-    }
+    // 티켓 경로 호환: (A) rooms/<gateKey>/access/...  (B) <gateKey>/access/...
+    const tryPaths = [
+      `rooms/${gateKey}/access/sudaTickets/${cleanTid}`,
+      `${gateKey}/access/sudaTickets/${cleanTid}`,
+    ];
 
-    let foundRoomId = "";
     let ticketRef = null;
-
-    // 1) 먼저 "있는 티켓" 경로를 찾는다 (없으면 transaction은 항상 abort됨)
-    //    - rooms/<room>/access/sudaTickets/<tid> (권장)
-    //    - access/sudaTickets/<tid> (구버전/실수 대응)
-    //    - sudaTickets/<tid> (구버전/실수 대응)
-    for (const rid of uniq){
-      const ref1 = window.FB.ref(window.FB.db, `rooms/${__toRoomKey(rid)}/access/sudaTickets/${String(tid)}`);
-      const snap = await window.FB.get(ref1);
-      if (snap && snap.exists && snap.exists()){
-        foundRoomId = rid;
-        ticketRef = ref1;
+    let snap = null;
+    let foundPath = "";
+    for (const p of tryPaths){
+      const r = window.FB.child(db, p);
+      const s = await window.FB.get(r);
+      if (s.exists()){
+        ticketRef = r;
+        snap = s;
+        foundPath = p;
         break;
       }
     }
 
-    // fallback 1: root access/sudaTickets
-    if (!ticketRef){
-      const ref2 = window.FB.ref(window.FB.db, `access/sudaTickets/${String(tid)}`);
-      const snap2 = await window.FB.get(ref2);
-      if (snap2 && snap2.exists && snap2.exists()){
-        foundRoomId = "";
-        ticketRef = ref2;
-      }
-    }
+    if(!snap){ snap = { exists: ()=>false }; }
 
-    // fallback 2: root sudaTickets
-    if (!ticketRef){
-      const ref3 = window.FB.ref(window.FB.db, `sudaTickets/${String(tid)}`);
-      const snap3 = await window.FB.get(ref3);
-      if (snap3 && snap3.exists && snap3.exists()){
-        foundRoomId = "";
-        ticketRef = ref3;
-      }
-    }
-
-    if (!ticketRef){
+    if(!snap.exists()){
       showOverlay('접속 제한', '입장 티켓이 없거나 만료되었어요. 대시보드에서 다시 열어주세요.');
-      throw new Error('invalid/expired ticket (not found)');
+      throw new Error('invalid/expired ticket (missing)');
     }
 
-    // 2) 찾은 경로에서 "1회용 소비" 처리 (중복 부트/리로드 가드 포함)
-    let res = null;
+    const t = snap.val() || {};
+    const now = Date.now();
+    const expAtMs = Number(t.expAtMs || 0);
+    const usedAtMs = Number(t.usedAtMs || 0);
+
+    // accept tickets created for this uid OR (loose mode) any uid when empty
+    const ticketUid = String(t.uid || "");
+    if(ticketUid && myUid && ticketUid !== myUid){
+      showOverlay('접속 제한', '이 티켓은 다른 기기/세션에서 발급된 티켓이에요. 대시보드에서 다시 열어주세요.');
+      throw new Error('ticket uid mismatch');
+    }
+
+    if(!expAtMs || expAtMs < now){
+      showOverlay('접속 제한', '입장 티켓이 만료되었어요. 대시보드에서 다시 열어주세요.');
+      throw new Error('ticket expired');
+    }
+
+    if(usedAtMs && usedAtMs > 0){
+      // If you want multi-use, remove this block
+      showOverlay('접속 제한', '이미 사용된 티켓이에요. 대시보드에서 다시 열어주세요.');
+      throw new Error('ticket already used');
+    }
+
+    // mark used (best-effort)
     try{
-      res = await window.FB.runTransaction(ticketRef, (cur)=>{
-        if (!cur) return; // abort
-        const now = Date.now();
-        const exp = Number(cur.expAtMs || cur.expAt || 0) || 0;
-        if (exp && now > exp) return; // abort
-
-        // Allow reload within grace window for the same user
-        if (cur.usedAtMs){
-          const graceMs = 60000;
-          const usedBy = String(cur.usedByUid || cur.uid || cur.by || '');
-          if (usedBy && myUid && usedBy === myUid && (now - Number(cur.usedAtMs || 0) <= graceMs)){
-            return cur; // ok
-          }
-          return; // abort
-        }
-
-        cur.usedAtMs = now;
-        const who = myUid || String(cur.uid || cur.by || '');
-        if (who) cur.usedByUid = who;
-        return cur;
-      });
-    }catch(txErr){
-      // If rules block writes (PERMISSION_DENIED), fall back to read-only validation (weak gate).
-      console.warn("ticket transaction failed, fallback to read-only validate:", txErr);
-      try{
-        const snap2 = await window.FB.get(ticketRef);
-        if (snap2 && snap2.exists && snap2.exists()){
-          const cur = snap2.val ? snap2.val() : null;
-          const now = Date.now();
-          const exp = Number(cur?.expAtMs || cur?.expAt || 0) || 0;
-          if (!exp || now <= exp){
-            // treat as ok without consuming
-            res = { committed: true, snapshot: snap2 };
-          }
-        }
-      }catch(e2){
-        // ignore
-      }
-    }
-if (!res || !res.committed){
-      showOverlay('접속 제한', '입장 티켓이 없거나 만료되었어요. 대시보드에서 다시 열어주세요.');
-      throw new Error('invalid/expired ticket');
+      await window.FB.update(ticketRef, { usedAtMs: now, usedBy: (t.usedBy||t.by||""), by: (t.by||""), lastSeenAtMs: now });
+    }catch(e){
+      console.warn('ticket mark-used failed (continuing):', e);
     }
 
-    return { gateRoomId: foundRoomId, tid };
-  })().finally(() => { try{ window.__sudaGateVerifyPromise = null; }catch(e){} });
+    // ✅ gate passed
+    try{ window.__sudaGatePassed = true; }catch(_){}
+    return true;
+  })();
 
-    const out = await window.__sudaGateVerifyPromise;
-    window.__sudaGateVerified = out;
-    return out;
-  }
+  return await window.__sudaGateVerifiedPromise;
+}
+
 
 
   
