@@ -3213,11 +3213,18 @@ function verifyGateTicket_(){
         throw new Error('ticket sessionKey mismatch');
       }
     }else{
-      // 레거시: sk가 없는 옛 티켓은 uid로만 검사 (호환)
-      const ticketUid = String(t.uid || "");
-      if(ticketUid && myUid && ticketUid !== myUid){
-        showOverlay('접속 제한', '이 티켓은 다른 기기/세션에서 발급된 티켓이에요. 대시보드에서 다시 열어주세요.');
-        throw new Error('ticket uid mismatch');
+      // ✅ 레거시 티켓 자동 업그레이드: sk가 없으면 "현재 브라우저의 sk"를 티켓에 심어준다.
+      // - uid는 더 이상 강제 비교하지 않음(익명 uid 변경으로 인한 오탐 방지)
+      let ensuredSk = storedSk;
+      if(!ensuredSk){
+        ensuredSk = (crypto?.randomUUID?.() || (String(Date.now()) + "-" + Math.random().toString(16).slice(2)));
+        try{ localStorage.setItem(skKey, ensuredSk); }catch(_){}
+      }
+      try{
+        // 티켓에 sk가 없을 때만 기록(경합 시에도 문제없음)
+        await window.FB.update(tRef, { sk: ensuredSk, skSetAtMs: Date.now() });
+      }catch(_){
+        // 쓰기 실패해도(룰/네트워크) 일단 계속 진행: 이후 usedAtMs 로 보호됨
       }
     }
 if(!expAtMs || expAtMs < now){
