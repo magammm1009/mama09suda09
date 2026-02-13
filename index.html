@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>💣Boom!</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
   <style>
     :root{
       --bg:#fff7fb;
@@ -2622,9 +2623,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     app, auth, db, storage, ensureAnonAuth,
     getDb: () => db,
     getAuth: () => auth,
-    // Realtime Database
-    ref, push, set, update, remove, get, runTransaction,
-    query, limitToLast, onChildAdded, onValue, onDisconnect,
+    // Realtime Database (v9+ modular)
+    ref, child, push, set, update, remove, get, runTransaction, serverTimestamp,
+    query, orderByChild, limitToLast,
+    onChildAdded, onValue, off, onDisconnect,
+    goOnline, goOffline,
 
     // Storage (MP3 공유 업로드용)
     sRef, uploadBytesResumable, getDownloadURL, deleteObject
@@ -3157,7 +3160,7 @@ function verifyGateTicket_(){
     let snap = null;
     let foundPath = "";
     for (const p of tryPaths){
-      const r = window.FB.child(db, p);
+      const r = window.FB.ref(db, p);
       const s = await window.FB.get(r);
       if (s.exists()){
         ticketRef = r;
