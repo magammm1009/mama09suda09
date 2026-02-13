@@ -2582,7 +2582,7 @@ body{
 
 // ---- script 1 (type="module") ----
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
-  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
   import {
     getDatabase, ref, child, push, set, update, remove, get, runTransaction, serverTimestamp,
     query, orderByChild, limitToLast, onChildAdded, onValue, off, onDisconnect, goOnline, goOffline
@@ -2614,8 +2614,24 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   const storage = getStorage(app);
 
   async function ensureAnonAuth(){
-    if (!auth.currentUser) await signInAnonymously(auth);
-    return auth.currentUser;
+    // 기다렸다가(복원 포함) 없으면 익명 로그인
+    try{
+      await setPersistence(auth, browserLocalPersistence);
+    }catch(e){
+      // persistence 설정이 실패해도 계속 진행
+    }
+    return await new Promise((resolve, reject) => {
+      const unsub = onAuthStateChanged(auth, async (user) => {
+        try{
+          unsub();
+          if (user) return resolve(user);
+          const cred = await signInAnonymously(auth);
+          resolve(cred.user);
+        }catch(err){
+          reject(err);
+        }
+      }, reject);
+    });
   }
 
   // module 밖에서 쓰기 위해 window로 노출
