@@ -3111,6 +3111,8 @@ function escapeHtml(s){
   }
   const TICKET_PATH_ = (gateRoomId, tid) => `rooms/${__toRoomKey(gateRoomId)}/access/sudaTickets/${String(tid)}`;
   async function verifyGateTicket_(){
+    // prevent double-run in same page
+    if (window.__sudaGateVerified) return window.__sudaGateVerified;
     const gateRoomId = getQs_('gateRoom') || getQs_('room') || '';
     const tid = getQs_('ticket') || '';
     if (!gateRoomId || !tid){
@@ -3118,23 +3120,39 @@ function escapeHtml(s){
       throw new Error('missing gateRoom/ticket');
     }
     await window.FB.ensureAnonAuth();
+    const myUid = window.FB.auth && window.FB.auth.currentUser ? String(window.FB.auth.currentUser.uid || '') : '';
     const tref = window.FB.ref(window.FB.db, TICKET_PATH_(gateRoomId, tid));
     const res = await window.FB.runTransaction(tref, (cur)=>{
       if (!cur) return; // abort
       const now = Date.now();
-      const exp = Number(cur.expAtMs || 0) || 0;
+      const exp = Number(cur.expAtMs || cur.expAt || 0) || 0;
       if (exp && now > exp) return; // abort
-      if (cur.usedAtMs) return; // abort
+
+      // If this ticket was just consumed by this same user (double-boot / reload),
+      // allow within a short grace window.
+      if (cur.usedAtMs){
+        const graceMs = 15000;
+        const usedBy = String(cur.usedByUid || '');
+        if (usedBy && myUid && usedBy === myUid && (now - Number(cur.usedAtMs || 0) <= graceMs)){
+          return cur; // treat as ok
+        }
+        return; // abort
+      }
+
       cur.usedAtMs = now;
+      if (myUid) cur.usedByUid = myUid;
       return cur;
     });
     if (!res || !res.committed){
       showOverlay('접속 제한', '입장 티켓이 없거나 만료되었어요. 대시보드에서 다시 열어주세요.');
       throw new Error('invalid/expired ticket');
     }
-    return { gateRoomId, tid };
+    const out = { gateRoomId, tid };
+    window.__sudaGateVerified = out;
+    return out;
   }
 
+  
   async function joinOrPing_(){
     if (isStopped) return;
     try{
