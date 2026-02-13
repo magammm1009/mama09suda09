@@ -3105,10 +3105,11 @@ function escapeHtml(s){
   // - URL: ?gateRoom=<작업방룸>&ticket=<tid>
   // - rooms/{gateRoom}/access/sudaTickets/{tid} 를 확인
   // =====================
+  function __toRoomKey(v){return String(v||'').replace(/[.#$\[\]\/]/g,'_');}
   function getQs_(k){
     try{ return new URL(location.href).searchParams.get(k) || ''; }catch(e){ return ''; }
   }
-  const TICKET_PATH_ = (gateRoomId, tid) => `rooms/${String(gateRoomId)}/access/sudaTickets/${String(tid)}`;
+  const TICKET_PATH_ = (gateRoomId, tid) => `rooms/${__toRoomKey(gateRoomId)}/access/sudaTickets/${String(tid)}`;
   async function verifyGateTicket_(){
     const gateRoomId = getQs_('gateRoom') || getQs_('room') || '';
     const tid = getQs_('ticket') || '';
