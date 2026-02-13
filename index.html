@@ -3154,6 +3154,9 @@ function escapeHtml(s){
     let ticketRef = null;
 
     // 1) 먼저 "있는 티켓" 경로를 찾는다 (없으면 transaction은 항상 abort됨)
+    //    - rooms/<room>/access/sudaTickets/<tid> (권장)
+    //    - access/sudaTickets/<tid> (구버전/실수 대응)
+    //    - sudaTickets/<tid> (구버전/실수 대응)
     for (const rid of uniq){
       const ref1 = window.FB.ref(window.FB.db, `rooms/${__toRoomKey(rid)}/access/sudaTickets/${String(tid)}`);
       const snap = await window.FB.get(ref1);
@@ -3161,6 +3164,26 @@ function escapeHtml(s){
         foundRoomId = rid;
         ticketRef = ref1;
         break;
+      }
+    }
+
+    // fallback 1: root access/sudaTickets
+    if (!ticketRef){
+      const ref2 = window.FB.ref(window.FB.db, `access/sudaTickets/${String(tid)}`);
+      const snap2 = await window.FB.get(ref2);
+      if (snap2 && snap2.exists && snap2.exists()){
+        foundRoomId = "";
+        ticketRef = ref2;
+      }
+    }
+
+    // fallback 2: root sudaTickets
+    if (!ticketRef){
+      const ref3 = window.FB.ref(window.FB.db, `sudaTickets/${String(tid)}`);
+      const snap3 = await window.FB.get(ref3);
+      if (snap3 && snap3.exists && snap3.exists()){
+        foundRoomId = "";
+        ticketRef = ref3;
       }
     }
 
