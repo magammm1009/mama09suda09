@@ -2606,6 +2606,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   const auth = getAuth(app);
   const db = getDatabase(app);
 
+  // Expose helpers for older gate/utility code paths
+  window.FB_getDb = () => db;
+  window.FB_getAuth = () => auth;
+  window.FB_ref = (path) => ref(db, path);
   const storage = getStorage(app);
 
   async function ensureAnonAuth(){
