@@ -3114,9 +3114,16 @@ function escapeHtml(s){
     try{ return new URL(location.href).searchParams.get(k) || ''; }catch(e){ return ''; }
   }
   const TICKET_PATH_ = (gateRoomId, tid) => `rooms/${__toRoomKey(gateRoomId)}/access/sudaTickets/${String(tid)}`;
-  async function verifyGateTicket_(){
+  function __normMs(v){
+  const n = Number(v||0);
+  if(!Number.isFinite(n) || n<=0) return 0;
+  // if seconds epoch, convert to ms
+  return (n < 2e12) ? Math.floor(n*1000) : Math.floor(n);
+}
+
+function verifyGateTicket_(){
   // Single-flight: prevent double runs
-  if (window.__sudaGateVerifiedPromise) return await window.__sudaGateVerifiedPromise;
+  if (window.__sudaGateVerifiedPromise) return window.__sudaGateVerifiedPromise;
 
   window.__sudaGateVerifiedPromise = (async () => {
     const url = new URL(location.href);
@@ -3201,7 +3208,7 @@ function escapeHtml(s){
     return true;
   })();
 
-  return await window.__sudaGateVerifiedPromise;
+  return window.__sudaGateVerifiedPromise;
 }
 
 
