@@ -2620,7 +2620,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   // module 밖에서 쓰기 위해 window로 노출
   window.FB = {
     app, auth, db, storage, ensureAnonAuth,
-
+    getDb: () => db,
+    getAuth: () => auth,
     // Realtime Database
     ref, push, set, update, remove, get, runTransaction,
     query, limitToLast, onChildAdded, onValue, onDisconnect,
