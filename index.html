@@ -2333,6 +2333,7 @@ body{
           <div class="metaSmall" id="sessLabel">SESSION: -</div>
         </div>
         <button class="pinBtn" id="btnNoticePin" type="button" title="공지">📌</button>
+        <button class="pinBtn" id="btnOnlineBtn" type="button" title="접속자">👥 0</button>
       </div>
     </div>
 
@@ -3932,6 +3933,7 @@ function updateAutoScrollState_(){
   function refreshPresenceUi_(){
     const r = computePresenceFromConn_(presenceLiveVal);
     $('onlineSub').textContent = `${r.count}명`;
+    try{ const b=$('btnOnlineBtn'); if (b) b.textContent = `👥 ${r.count}명`; }catch(e){}
 
     const box = $('onlineList');
     box.innerHTML = '';
@@ -3944,6 +3946,31 @@ function updateAutoScrollState_(){
 
     // DJ UI may depend on online list
     try{ setDjUi_(); }catch(e){}
+  }
+
+
+  // ✅ Topbar: 접속 인원 버튼 + 오버레이 목록
+  function openOnline_(){
+    try{
+      const r = computePresenceFromConn_(presenceLiveVal);
+      const chips = r.names.map(n =>
+        `<div class="nameChip" style="margin:6px 6px 0 0; display:inline-flex;">`+
+        `<span class="nm">${escapeHtml(n)}</span>`+
+        `<span class="muted">●</span>`+
+        `</div>`
+      ).join('');
+      const html =
+        `<div class="noticeBox" style="text-align:left;">`+
+          `<div class="noticeMeta">현재 접속: <b>${r.count}명</b></div>`+
+          `<div style="margin-top:6px; padding:10px 12px; border-radius:14px; border:1px dashed rgba(0,0,0,.10); background: rgba(255, 209, 232, .14);">`+
+            (chips || `<span class="muted">아직 접속자가 없어요.</span>`) +
+          `</div>`+
+        `</div>`;
+      showOverlayHtml('👥 접속자', html, false);
+    }catch(e){
+      showOverlay('오류', '접속자 목록을 여는 중 문제가 생겼어. 콘솔을 확인해줘!');
+      console.warn(e);
+    }
   }
 
 
@@ -8769,7 +8796,6 @@ function applyRemoteBgm_(v, force){
   async function bgmPlay_(){
   // 입력창에서 직접 재생 = 재생목록 모드 해제
   playingFromPlaylist_ = false;
-  loadYouTubeApiOnce();
 
   const url = $('bgmUrl').value;
   const vid = parseYouTubeId(url);
@@ -8781,6 +8807,8 @@ function applyRemoteBgm_(v, force){
   // DJ guard: only DJ can control BGM
   if (!isDj_()){
     if (djTakeoverAllowed_()){
+      // NOTE: 이 await는 사용자 제스처를 끊을 수 있어요.
+      // DJ를 먼저 확보해야 하므로 여기서는 유지합니다.
       await claimDj_(true);
     }
     if (!isDj_()){
@@ -8792,34 +8820,47 @@ DJ만 노래를 틀/바꿀 수 있어!`);
 
   // user gesture granted
   bgmAllowed_ = true;
-  localStorage.setItem(LS_BGM_URL, url);
+
+  // ✅ 사용자 클릭(제스처) 안에서 먼저 로컬 재생을 시작해 자동재생 차단을 피함
+  loadYouTubeApiOnce();
 
   const vol = Number($('bgmVol').value || 60);
-  localStorage.setItem(LS_BGM_VOL, String(vol));
+  try{ localStorage.setItem(LS_BGM_URL, url); }catch(e){}
+  try{ localStorage.setItem(LS_BGM_VOL, String(vol)); }catch(e){}
 
-  // Write shared state -> everyone follows
+  const startedAt = Date.now();
+
+  // Local immediate apply (gesture-safe)
   try{
-    await window.FB.ensureAnonAuth();
-    const bgmRef = window.FB.ref(window.FB.db, fbBgmPath_(sessionId));
-    await window.FB.set(bgmRef, {
-      kind: 'yt',
-      fromPlaylist: false,
-      url,
-      videoId: vid,
-      startedAt: Date.now(),
-      pausedPos: null,
-      by: myName().slice(0,12),
-      state: 'playing'
-    });
-    // (노래 재생 알림은 채팅 상단 이펙트로 표시)
-
-    // Local immediate apply
-    applyRemoteBgm_({ kind:'yt', url, videoId: vid, startedAt: Date.now(), by: myName().slice(0,12), state:'playing', fromPlaylist:false }, true);
+    applyRemoteBgm_({ kind:'yt', url, videoId: vid, startedAt, by: myName().slice(0,12), state:'playing', fromPlaylist:false }, true);
   }catch(e){
     console.warn(e);
-    alert('BGM 공유 저장 실패! (Firebase Rules / 로그인 설정 확인)');
   }
+
+  // Write shared state -> everyone follows (fire-and-forget)
+  (async()=>{
+    try{
+      await window.FB.ensureAnonAuth();
+      const bgmRef = window.FB.ref(window.FB.db, fbBgmPath_(sessionId));
+      await window.FB.set(bgmRef, {
+        kind: 'yt',
+        fromPlaylist: false,
+        url,
+        videoId: vid,
+        startedAt,
+        pausedPos: null,
+        by: myName().slice(0,12),
+        state: 'playing'
+      });
+      // (노래 재생 알림은 채팅 상단 이펙트로 표시)
+    }catch(e){
+      console.warn('bgm set failed', e);
+      // 로컬은 이미 재생 중일 수 있으니 상태만 표시
+      try{ setBgmState('재생(동기화 실패)'); }catch(err){}
+    }
+  })();
 }
+
 
 function getLocalPlayPosSec_(){
   try{
@@ -9493,6 +9534,7 @@ if (tbBtn){
     // notice (menu + topbar pin)
     // ✅ 공지 보기 버튼은 상단 📌(btnNoticePin)으로 이동 → 메뉴 버튼은 제거
     $('btnNoticePin')?.addEventListener('click', openNotice_);
+    $('btnOnlineBtn')?.addEventListener('click', openOnline_);
 
     // guide / typing race
     $('btnGuide')?.addEventListener('click', showGuide_);
