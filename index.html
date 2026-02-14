@@ -2655,18 +2655,68 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   let ytPlayer = null;
   let ytReady = false;
 
-  function loadYouTubeApiOnce(){
-    if (document.getElementById('yt_api')) return;
-    const s = document.createElement('script');
-    s.id = 'yt_api';
-    s.src = 'https://www.youtube.com/iframe_api';
-    document.head.appendChild(s);
-  }
+// ✅ YouTube iframe_api 로딩 보강판 (콜백 누락/차단 대응)
+let ytApiLoading = false;
 
-  window.onYouTubeIframeAPIReady = function(){
-    ytReady = true;
-    // 실제 플레이어 생성은 "재생" 누를 때 만들게(불필요한 iframe 최소화)
+function loadYouTubeApiOnce(){
+  if (ytReady) return;
+  if (document.getElementById('yt_api')) return;
+
+  ytApiLoading = true;
+  try { setBgmState('유튜브 로딩 중...'); } catch(e){}
+
+  const s = document.createElement('script');
+  s.id = 'yt_api';
+  s.src = 'https://www.youtube.com/iframe_api';
+
+  // ✅ 1) 스크립트 onload 시점에 YT 존재하면 ready로 처리
+  s.onload = () => {
+    // iframe_api는 보통 로드 후 onYouTubeIframeAPIReady를 호출하지만,
+    // 확장프로그램/정책에 의해 콜백이 막히는 경우가 있어 폴링으로 보강
+    const t0 = Date.now();
+    const timer = setInterval(() => {
+      if (window.YT && typeof window.YT.Player === 'function'){
+        ytReady = true;
+        ytApiLoading = false;
+        clearInterval(timer);
+        try { setBgmState('재생 준비'); } catch(e){}
+      } else if (Date.now() - t0 > 4000){
+        // 4초 넘게 YT가 안 생기면 사실상 차단/실패
+        ytApiLoading = false;
+        clearInterval(timer);
+        try { setBgmState('유튜브 로딩 실패(차단됨?)'); } catch(e){}
+        try{
+          showOverlay(
+            '유튜브 로딩이 막혔어요',
+            '브라우저 확장(Adblock/uBlock/Brave Shields/추적차단)이 youtube iframe_api를 막으면 BGM이 "준비"에서 멈춰요.\n\n1) 광고차단/추적차단을 이 사이트에서 꺼보고\n2) 새로고침 후 다시 “BGM 허용/재생” 눌러줘!'
+          );
+        }catch(e){}
+      }
+    }, 200);
   };
+
+  // ✅ 2) 네트워크 차단/실패 감지
+  s.onerror = () => {
+    ytApiLoading = false;
+    try { setBgmState('유튜브 로딩 실패(네트워크)'); } catch(e){}
+    try{
+      showOverlay(
+        '유튜브 스크립트 로드 실패',
+        '네트워크/정책 때문에 youtube iframe_api가 로드되지 않았어요.\n다른 네트워크/브라우저로 테스트하거나, 확장프로그램을 꺼봐줘.'
+      );
+    }catch(e){}
+  };
+
+  document.head.appendChild(s);
+}
+
+// ✅ 기존 콜백도 유지 (정상 케이스)
+window.onYouTubeIframeAPIReady = function(){
+  ytReady = true;
+  ytApiLoading = false;
+  try { setBgmState('재생 준비'); } catch(e){}
+};
+
 
   function ensureYtPlayer(videoId){
     if (!ytReady) return null;
