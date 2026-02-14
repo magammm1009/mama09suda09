@@ -81,7 +81,10 @@
     }
     .onlineBtn:active{ transform: translateY(1px); }
 
-    .pinBtn:hover{ filter:brightness(0.98); }
+    
+    .onlineBtn .onlineIco{ font-size:18px; line-height:1; }
+    .onlineBtn .onlineCnt{ font-size:14px; font-weight:900; letter-spacing:-0.2px; }
+.pinBtn:hover{ filter:brightness(0.98); }
     .pinBtn.pinNew::after{
       content:"";
       position:absolute;
@@ -2337,6 +2340,10 @@ body{
     }
     .acidMiniNote{ font-size: 12px; color: var(--muted); font-weight: 800; }
 
+  
+    /* ✅ (v3) 접속자 사이드 목록 제거 */
+    #onlineSide, .onlineSide, .onlineSideCard{ display:none !important; }
+
   </style>
 </head>
 
@@ -2351,7 +2358,7 @@ body{
           <div class="metaSmall" id="sessLabel">SESSION: -</div>
         </div>
         <button class="pinBtn" id="btnNoticePin" type="button" title="공지">📌</button>
-        <button class="pinBtn onlineBtn" id="btnOnlineBtn" type="button" title="접속자">👥 0</button>
+        <button class="pinBtn onlineBtn" id="btnOnlineBtn" type="button" title="접속자"><span class="onlineIco">👥</span><span class="onlineCnt" id="onlineCntBtn">0명</span></button>
       </div>
     </div>
 
@@ -2681,6 +2688,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 let ytApiLoading = false;
 
 function loadYouTubeApiOnce(){
+  // ✅ (v3) github pages에서도 안정적으로 동작하도록 host 고정
+  window.YTConfig = window.YTConfig || {};
+  if (!window.YTConfig.host) window.YTConfig.host = 'https://www.youtube.com';
   if (ytReady) return;
   if (document.getElementById('yt_api')) return;
 
@@ -2759,7 +2769,8 @@ window.onYouTubeIframeAPIReady = function(){
       height: '0',
       width: '0',
       videoId: videoId || '',
-      playerVars: { autoplay: 1, controls: 0, loop: 0 },
+      host: 'https://www.youtube.com',
+      playerVars: { autoplay: 1, controls: 0, loop: 0, playsinline: 1, origin: location.origin },
       events: {
         onReady: () => {
           ytPlayerReady_ = true;
@@ -3961,7 +3972,7 @@ function updateAutoScrollState_(){
   function refreshPresenceUi_(){
     const r = computePresenceFromConn_(presenceLiveVal);
     $('onlineSub').textContent = `${r.count}명`;
-    try{ const b=$('btnOnlineBtn'); if (b) b.textContent = `👥 ${r.count}명`; }catch(e){}
+    try{ const b=$('btnOnlineBtn'); if (b){ const c=$('onlineCntBtn'); if (c) c.textContent = `${r.count}명`; else b.innerHTML = `<span class="onlineIco">👥</span><span class="onlineCnt" id="onlineCntBtn">${r.count}명</span>`; } }catch(e){}
 
     const box = $('onlineList');
     box.innerHTML = '';
