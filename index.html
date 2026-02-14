@@ -67,6 +67,20 @@
       font-size: 18px;
       position: relative;
     }
+    .onlineBtn{
+      width:auto;
+      height:34px;
+      padding:0 12px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:6px;
+      font-size:14px;
+      font-weight:900;
+      white-space:nowrap;
+    }
+    .onlineBtn:active{ transform: translateY(1px); }
+
     .pinBtn:hover{ filter:brightness(0.98); }
     .pinBtn.pinNew::after{
       content:"";
@@ -137,6 +151,10 @@
       grid-template-columns: 1fr 260px;
       gap: 12px;
     }
+    /* ✅ 사이드 접속자 패널 제거(버튼으로 대체) */
+    .card.side{ display:none !important; }
+    .layout{ grid-template-columns: 1fr !important; }
+
     
 @media (max-width: 760px){
       :root{ --chatMsgPx: 14px; }
@@ -2333,7 +2351,7 @@ body{
           <div class="metaSmall" id="sessLabel">SESSION: -</div>
         </div>
         <button class="pinBtn" id="btnNoticePin" type="button" title="공지">📌</button>
-        <button class="pinBtn" id="btnOnlineBtn" type="button" title="접속자">👥 0</button>
+        <button class="pinBtn onlineBtn" id="btnOnlineBtn" type="button" title="접속자">👥 0</button>
       </div>
     </div>
 
@@ -2655,6 +2673,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 // 유튜브 플레이어는 iframe_api 로딩 후 생성
   let ytPlayer = null;
   let ytReady = false;
+  let ytPlayerReady_ = false;
+  let ytPendingApply_ = null;
+
 
 // ✅ YouTube iframe_api 로딩 보강판 (콜백 누락/차단 대응)
 let ytApiLoading = false;
@@ -2741,8 +2762,15 @@ window.onYouTubeIframeAPIReady = function(){
       playerVars: { autoplay: 1, controls: 0, loop: 0 },
       events: {
         onReady: () => {
+          ytPlayerReady_ = true;
           setBgmState('재생 준비');
-          // ready
+          try{
+            if (ytPendingApply_){
+              const tmp = ytPendingApply_;
+              ytPendingApply_ = null;
+              setTimeout(()=>{ try{ applyRemoteBgm_(tmp, true); }catch(e){} }, 0);
+            }
+          }catch(e){}
         },
         onStateChange: (e) => {
           // 0=ended, 1=playing, 2=paused
@@ -8721,16 +8749,21 @@ function applyRemoteBgm_(v, force){
     return;
   }
 
+  // ✅ 플레이어가 아직 onReady 전이면, pending으로 저장하고 조금 뒤 재시도
+  if (!ytPlayerReady_){
+    ytPendingApply_ = v;
+    setBgmState('플레이어 준비 중...');
+    setTimeout(()=> applyRemoteBgm_(v, true), 350);
+    return;
+  }
+
   // Keep volume as local preference
   const vol = Number($('bgmVol').value || 60);
   try{ p.setVolume(vol); }catch(e){}
 
   try{
-    // load
-    p.loadVideoById(vid);
-
-    // seek
-    let target = null;
+    // ✅ load + seek를 한 번에 (준비 타이밍 문제 줄이기)
+    let target = 0;
     if (state === 'paused' && typeof v.pausedPos === 'number'){
       target = Math.max(0, Number(v.pausedPos || 0));
     }else{
@@ -8739,15 +8772,26 @@ function applyRemoteBgm_(v, force){
         target = Math.max(0, (Date.now() - startedAt) / 1000);
       }
     }
-    if (typeof target === 'number' && isFinite(target)){
-      p.seekTo(target, true);
+    try{
+      p.loadVideoById({ videoId: vid, startSeconds: target });
+    }catch(e){
+      // 구형 방식 fallback
+      p.loadVideoById(vid);
+      if (target) try{ p.seekTo(target, true); }catch(e2){}
     }
 
     if (state === 'paused'){
-      p.pauseVideo();
+      // pause는 약간의 딜레이 후 안정적으로
+      setTimeout(()=>{ try{ p.pauseVideo(); }catch(e){} }, 80);
       setBgmState('일시정지' + who);
     }else{
-      p.playVideo();
+      // ✅ autoplay 정책 우회: 먼저 mute 재생 -> 잠깐 뒤 unmute + 볼륨 적용
+      try{ p.mute(); }catch(e){}
+      try{ p.playVideo(); }catch(e){}
+      setTimeout(()=>{
+        try{ p.unMute(); }catch(e){}
+        try{ p.setVolume(vol); }catch(e){}
+      }, 250);
       setBgmState('같이 듣는 중' + who);
     }
   }catch(e){
