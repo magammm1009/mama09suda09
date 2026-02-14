@@ -79,6 +79,21 @@
       font-weight:900;
       white-space:nowrap;
     }
+    /* ✅ (v4) pinBtn 기본 스타일이 덮어쓰는 경우를 대비해 더 강한 선택자 */
+    .pinBtn.onlineBtn{
+      width:auto !important;
+      padding:0 12px !important;
+      display:inline-flex !important;
+      align-items:center !important;
+      justify-content:center !important;
+      gap:6px !important;
+      white-space:nowrap !important;
+    }
+
+    
+    /* ✅ (v4) 사이드 접속자 목록 숨김 */
+    #onlineSide, .onlineSide, #sideOnline, .sideOnline { display:none !important; }
+
     .onlineBtn:active{ transform: translateY(1px); }
 
     
@@ -2557,11 +2572,11 @@ body{
     <div class="overlayTop">
       <p class="overlayTitle" id="ovTitle">알림</p>
       <div class="overlayTools">
-<button id="ovCloseBtn" class="overlayToolBtn" type="button" title="닫기" onclick="try{event&&event.preventDefault&&event.preventDefault();event&&event.stopPropagation&&event.stopPropagation();}catch(e){};hideOverlay();">✕</button>
+<button id="ovCloseBtn" class="overlayToolBtn" type="button" title="닫기" onclick="try{event&&event.preventDefault&&event.preventDefault();event&&event.stopPropagation&&event.stopPropagation();}catch(e){};overlayOkClick_();">✕</button>
       </div>
     </div>
     <div class="overlayMsg" id="ovMsg"></div>
-    <button id="ovOkBtn" type="button" onclick="try{event&&event.preventDefault&&event.preventDefault();event&&event.stopPropagation&&event.stopPropagation();}catch(e){};hideOverlay();">확인</button>
+    <button id="ovOkBtn" type="button" onclick="try{event&&event.preventDefault&&event.preventDefault();event&&event.stopPropagation&&event.stopPropagation();}catch(e){};overlayOkClick_();">확인</button>
   </div>
 </div>
 
@@ -2784,12 +2799,23 @@ window.onYouTubeIframeAPIReady = function(){
           }catch(e){}
         },
         onStateChange: (e) => {
-          // 0=ended, 1=playing, 2=paused
+          // 0=ended, 1=playing, 2=paused, -1=unstarted
           if (e.data === 1) setBgmState('재생 중');
           if (e.data === 2) setBgmState('일시정지');
           if (e.data === 0){
             try{ onYtEnded_(); }catch(err){}
           }
+        },
+        onError: (e) => {
+          // 2=invalid, 5=HTML5, 100=not found, 101/150=embed disabled
+          const code = (e && typeof e.data !== 'undefined') ? e.data : '?';
+          setBgmState('재생 불가(제한됨)');
+          try{
+            showOverlay(
+              'BGM 재생이 막혔어요',
+              '이 유튜브 영상은 외부 사이트에서 재생이 제한됐거나(101/150), 영상이 없거나(100), 링크가 잘못됐을 수 있어요.\n\n에러 코드: ' + code + '\n\n✅ 해결: 다른 유튜브 링크로 바꿔서 다시 시도해줘!'
+            );
+          }catch(err){}
         }
       }
     });
@@ -2998,13 +3024,44 @@ function escapeHtml(s){
   }
 
   function showOverlay(title, msg){
+    // 기본 알림(확인 버튼)
     try{ setOverlayResizable_(false); }catch(e){}
+    window.__ovOkFn = null;
+    const ok = $('ovOkBtn');
+    if (ok) ok.textContent = '확인';
     $('ovTitle').textContent = title;
     $('ovMsg').textContent = msg;
     const ov = $('overlay');
     if (ov){
       ov.style.display = 'flex';
       ov.setAttribute('aria-hidden','false');
+    }
+  }
+
+  function showOverlayAction(title, msg, okText, okFn){
+    // 확인 버튼에 동작을 붙이는 오버레이
+    try{ setOverlayResizable_(false); }catch(e){}
+    window.__ovOkFn = (typeof okFn === 'function') ? okFn : null;
+    const ok = $('ovOkBtn');
+    if (ok) ok.textContent = okText || '확인';
+    $('ovTitle').textContent = title;
+    $('ovMsg').textContent = msg;
+    const ov = $('overlay');
+    if (ov){
+      ov.style.display = 'flex';
+      ov.setAttribute('aria-hidden','false');
+    }
+  }
+
+  function overlayOkClick_(){
+    try{
+      const fn = window.__ovOkFn;
+      window.__ovOkFn = null;
+      if (typeof fn === 'function'){
+        try{ fn(); }catch(e){}
+      }
+    }finally{
+      hideOverlay();
     }
   }
 
@@ -8804,6 +8861,27 @@ function applyRemoteBgm_(v, force){
         try{ p.setVolume(vol); }catch(e){}
       }, 250);
       setBgmState('같이 듣는 중' + who);
+      // ✅ 1초 뒤에도 소리가 안 나면(뮤트/정책) 사용자가 '소리 켜기'를 눌러 해결하도록 안내
+      setTimeout(()=>{
+        try{
+          const st = (typeof p.getPlayerState === 'function') ? p.getPlayerState() : null;
+          const muted = (typeof p.isMuted === 'function') ? p.isMuted() : false;
+          if (st !== 1 || muted){
+            showOverlayAction(
+              '소리가 안 들리면 이 버튼!',
+              '브라우저 정책 때문에 자동으로 소리가 차단될 수 있어요.\n아래 버튼을 눌러 소리를 켜볼래요?',
+              '🔊 소리 켜기',
+              ()=>{
+                try{ p.unMute(); }catch(e){}
+                try{ p.playVideo(); }catch(e){}
+                try{ p.setVolume(vol); }catch(e){}
+                setBgmState('재생 중' + who);
+              }
+            );
+          }
+        }catch(e){}
+      }, 1000);
+
     }
   }catch(e){
     setBgmState('재생 실패');
