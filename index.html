@@ -8727,13 +8727,18 @@ function remoteKey_(v){
 
   // ✅ 재생목록에서 온 재생인지(자동 넘김)
   playingFromPlaylist_ = !!v?.fromPlaylist;
+
   const vid = String(v?.videoId || '');
   const fileUrl = String(v?.fileUrl || v?.url || '');
-  const at = Number(v?.startedAt || 0);
   const st = String(v?.state || '');
   const pp = (v && typeof v.pausedPos === 'number') ? String(v.pausedPos) : '';
-  return `${kind}|${vid}|${fileUrl}|${at}|${st}|${pp}`;
+
+  // ⚠️ startedAt(시간)은 키에 포함하지 않음:
+  // startedAt이 주기적으로 갱신되거나(혹은 클록 보정) 값이 미세하게 달라지면
+  // 매번 loadVideoById가 다시 실행되어 재생이 끊겨버림.
+  return `${kind}|${vid}|${fileUrl}|${st}|${pp}`;
 }
+
 
 function ensureAudioPlayer_(){
   if (audioPlayer_) return audioPlayer_;
