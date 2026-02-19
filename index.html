@@ -2785,7 +2785,7 @@ window.onYouTubeIframeAPIReady = function(){
       height: '0',
       width: '0',
       videoId: videoId || '',
-      host: 'https://www.youtube-nocookie.com',
+      host: 'https://www.youtube.com',
       playerVars: { autoplay: 1, controls: 0, loop: 0, playsinline: 1, rel: 0, modestbranding: 1, origin: (location.origin && location.origin !== 'null') ? location.origin : ('https://' + location.host) },
       events: {
         onReady: () => {
@@ -8848,12 +8848,38 @@ function applyRemoteBgm_(v, force){
         target = Math.max(0, (Date.now() - startedAt) / 1000);
       }
     }
+
+    // ✅ 같은 영상이면 'paused'에서 다시 로드하지 말기 (광고 재진입/지속 방지)
+    let curId = '';
     try{
-      p.loadVideoById({ videoId: vid, startSeconds: target });
-    }catch(e){
-      // 구형 방식 fallback
-      p.loadVideoById(vid);
-      if (target) try{ p.seekTo(target, true); }catch(e2){}
+      const d = (typeof p.getVideoData === 'function') ? p.getVideoData() : null;
+      curId = (d && (d.video_id || d.videoId)) ? String(d.video_id || d.videoId) : '';
+    }catch(e){}
+    if (!curId){
+      try{
+        const u = (typeof p.getVideoUrl === 'function') ? String(p.getVideoUrl()||'') : '';
+        const m = u.match(/[?&]v=([^&]+)/);
+        if (m && m[1]) curId = m[1];
+      }catch(e){}
+    }
+    const sameVideo = (curId && curId === vid);
+
+    if (!sameVideo){
+      try{
+        p.loadVideoById({ videoId: vid, startSeconds: target });
+      }catch(e){
+        // 구형 방식 fallback
+        p.loadVideoById(vid);
+        if (target) try{ p.seekTo(target, true); }catch(e2){}
+      }
+    }else{
+      // 같은 영상이면 위치만 살짝 보정(필요할 때만)
+      if (target){
+        try{
+          const now = (typeof p.getCurrentTime === 'function') ? Number(p.getCurrentTime()||0) : 0;
+          if (Math.abs(now - target) > 0.8) p.seekTo(target, true);
+        }catch(e){}
+      }
     }
 
     if (state === 'paused'){
@@ -9051,6 +9077,10 @@ DJ만 일시정지할 수 있어!`);
   bgmAllowed_ = true;
 
   const pos = getLocalPlayPosSec_();
+
+  // ✅ 즉시 로컬 일시정지(서버 동기화 기다리기 전에 버튼 반응 확보)
+  try{ if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); }catch(_){ }
+  try{ const a = ensureAudioPlayer_(); a.pause(); }catch(_){ }
 
   try{
     await window.FB.ensureAnonAuth();
