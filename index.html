@@ -2470,6 +2470,7 @@ body{
 
           <div class="row2" style="margin-top:8px;">
             <button id="btnPlClear" type="button">🧹 목록 비우기</button>
+              <button id="btnPlShuffle" type="button" title="랜덤 재생 토글">🔀 랜덤</button>
             <button id="btnPlSyncToInput" type="button">📌 현재곡 → 입력창</button>
           </div>
         </div>
@@ -2705,7 +2706,7 @@ let ytApiLoading = false;
 function loadYouTubeApiOnce(){
   // ✅ (v3) github pages에서도 안정적으로 동작하도록 host 고정
   window.YTConfig = window.YTConfig || {};
-  if (!window.YTConfig.host) window.YTConfig.host = 'https://www.youtube.com';
+  if (!window.YTConfig.host) window.YTConfig.host = 'https://www.youtube-nocookie.com';
   if (ytReady) return;
   if (document.getElementById('yt_api')) return;
 
@@ -2784,8 +2785,8 @@ window.onYouTubeIframeAPIReady = function(){
       height: '0',
       width: '0',
       videoId: videoId || '',
-      host: 'https://www.youtube.com',
-      playerVars: { autoplay: 1, controls: 0, loop: 0, playsinline: 1, origin: location.origin },
+      host: 'https://www.youtube-nocookie.com',
+      playerVars: { autoplay: 1, controls: 0, loop: 0, playsinline: 1, rel: 0, modestbranding: 1, origin: (location.origin && location.origin !== 'null') ? location.origin : ('https://' + location.host) },
       events: {
         onReady: () => {
           ytPlayerReady_ = true;
@@ -2921,6 +2922,8 @@ function openGameLink_(key){
   let plUnsub_ = null;
   let plRemote_ = null; // { items:[], curIndex:Number }
   let plSelIndex_ = -1;
+  let plShuffleMode_ = false; // 🔀 랜덤 재생 토글
+
 
   // Song Requests
   let reqUnsub_ = null;
@@ -3594,33 +3597,33 @@ if (cmd === '/명령어' || cmd === '/도움말'){
   msgEl.value = '';
   await pushSystem_(
     `🧭 ${nm}님, 사용 가능한 명령어 안내드립니다.\n` +
-    `• /완결 [메시지] : 완결 폭죽\n` +
-    `• /축하 [메시지] : 축하 폭죽\n` +
+    `• /완결 : 완결 폭죽\n` +
+    `• /축하 : 축하 폭죽\n` +
     `• /폭파 [비밀번호] : 세션 강제 초기화(관리자)\n` +
     `• /초기화 [비밀번호] : (/폭파와 동일)\n` +
     `• /하트 : 하트 뿌리기\n` +
     `• /반짝 : 반짝반짝 이펙트\n` +
     `• /눈꽃 : 눈꽃 내리기\n` +
     `• /박수 : 박수 이펙트\n` +
-    `• /환영 [메시지] : 환영 반짝\n` +
-    `• /고추 [메시지] : 고추력 폭발\n` +
-    `• /뽀뽀 [메시지] : 뽀뽀\n` +
-    `• /붐업 [메시지] : 분위기 붐업\n` +
-    `• /경고 [메시지] : 경고(화면 흔들림)\n` +
-    `• /댄스 [메시지] : 댄스타임\n` +
-    `• /마감 [메시지] : 원고거지(서류비)\n` +
-    `• /안녕 [메시지] : 인사\n` +
-    `• /굿바이 [메시지] : 굿바이\n` +
-    `• /끄덕 [메시지] : 끄덕\n` +
-    `• /제발 [메시지] : 제발\n` +
+    `• /환영 : 환영 반짝\n` +
+    `• /고추 : 고추력 폭발\n` +
+    `• /뽀뽀 : 뽀뽀\n` +
+    `• /붐업 : 분위기 붐업\n` +
+    `• /경고 : 경고(화면 흔들림)\n` +
+    `• /댄스 : 댄스타임\n` +
+    `• /마감 : 원고거지(서류비)\n` +
+    `• /안녕 : 인사\n` +
+    `• /굿바이 : 굿바이\n` +
+    `• /끄덕 : 끄덕\n` +
+    `• /제발 : 제발\n` +
     `• /수줍 : 수줍 이펙트\n` +
     `• /현타 : 현타 이펙트\n` +
     `• /각성 : 각성 이펙트\n` +
-    `• /영감 [메시지] : 영감 번쩍\n` +
-    `• /퇴고 [메시지] : 퇴고 연필비\n` +
-    `• /떡밥 [메시지] : 떡밥 투척\n` +
-    `• /정주행 [메시지] : 정주행 가속\n` +
-    `• /연재 [메시지] : 연재 출발!`
+    `• /영감 : 영감 번쩍\n` +
+    `• /퇴고 : 퇴고 연필비\n` +
+    `• /떡밥 : 떡밥 투척\n` +
+    `• /정주행 : 정주행 가속\n` +
+    `• /연재 : 연재 출발!`
   );
   return;
 }
@@ -8897,17 +8900,34 @@ function applyRemoteBgm_(v, force){
   // BGM (YouTube)
   // =====================
   function parseYouTubeId(url){
-    const s = String(url || '').trim();
-    if (!s) return '';
+    const s0 = String(url || '').trim();
+    if (!s0) return '';
+    // If user pasted raw ID
+    if (/^[A-Za-z0-9_-]{11}$/.test(s0)) return s0;
+
+    // Strip angle brackets / surrounding spaces
+    const s = s0.replace(/[<>]/g,'').trim();
+
     // youtu.be/VIDEOID
     let m = s.match(/youtu\.be\/([A-Za-z0-9_-]{6,})/);
-    if (m && m[1]) return m[1];
-    // v=VIDEOID
+    if (m && m[1]) return m[1].slice(0, 20);
+
+    // youtube.com/watch?v=VIDEOID (also music.youtube.com, m.youtube.com)
     m = s.match(/[?&]v=([A-Za-z0-9_-]{6,})/);
-    if (m && m[1]) return m[1];
-    // shorts/VIDEOID
+    if (m && m[1]) return m[1].slice(0, 20);
+
+    // youtube.com/shorts/VIDEOID
     m = s.match(/shorts\/([A-Za-z0-9_-]{6,})/);
-    if (m && m[1]) return m[1];
+    if (m && m[1]) return m[1].slice(0, 20);
+
+    // youtube.com/embed/VIDEOID
+    m = s.match(/embed\/([A-Za-z0-9_-]{6,})/);
+    if (m && m[1]) return m[1].slice(0, 20);
+
+    // youtube.com/live/VIDEOID
+    m = s.match(/\/live\/([A-Za-z0-9_-]{6,})/);
+    if (m && m[1]) return m[1].slice(0, 20);
+
     return '';
   }
 
@@ -9232,6 +9252,8 @@ function renderPlaylistUi_(){
   const cur = pl.curIndex || 0;
 
   st.textContent = items.length ? `${items.length}곡 · 현재 ${cur+1}/${items.length}` : '비어있음';
+  try{ const b=$('btnPlShuffle'); if(b){ b.textContent = plShuffleMode_ ? '🔀 랜덤 ON' : '🔀 랜덤'; } }catch(e){}
+
 
   box.innerHTML = '';
   if (!items.length){
@@ -9350,9 +9372,25 @@ async function plPrevNext_(dir){
   const n = pl.items?.length || 0;
   if (!n) return;
 
-  let next = Number(pl.curIndex || 0) + (dir || 0);
-  if (next < 0) next = n - 1;
-  if (next >= n) next = 0;
+  const cur = Number(pl.curIndex || 0);
+
+  let next = cur;
+  if (plShuffleMode_){
+    // 🔀 랜덤: 같은 곡이 연속으로 안 나오게 (1곡이면 그대로)
+    if (n <= 1){
+      next = 0;
+    } else {
+      for (let i=0;i<10;i++){
+        const r = Math.floor(Math.random() * n);
+        if (r !== cur){ next = r; break; }
+      }
+      if (next === cur) next = (cur + 1) % n;
+    }
+  } else {
+    next = cur + (dir || 0);
+    if (next < 0) next = n - 1;
+    if (next >= n) next = 0;
+  }
 
   pl.curIndex = next;
   await savePlaylistToDb_(pl);
@@ -9577,6 +9615,20 @@ function wirePlaylistAndRequestsUi_(){
   $('btnPlClear')?.addEventListener('click', async ()=>{
     await plClear_();
   });
+
+  $('btnPlShuffle')?.addEventListener('click', async ()=>{
+    // 🔀 랜덤 토글 (DJ만)
+    if (!isDj_()){
+      showOverlay('DJ만 가능', 'DJ만 랜덤 재생을 켤 수 있어요.');
+      return;
+    }
+    plShuffleMode_ = !plShuffleMode_;
+    try{
+      $('btnPlShuffle').textContent = plShuffleMode_ ? '🔀 랜덤 ON' : '🔀 랜덤';
+    }catch(e){}
+    showOverlay('랜덤 재생', plShuffleMode_ ? '랜덤 재생이 켜졌어! (다음 곡부터 랜덤으로 넘어가요)' : '랜덤 재생이 꺼졌어! (순서대로 재생해요)');
+  });
+
 
   $('btnPlSyncToInput')?.addEventListener('click', ()=>{
     try{
