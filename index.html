@@ -2595,6 +2595,7 @@ body{
           </div>
           <button id="btnBlastAdminPassword" type="button" style="margin-top:8px; width:100%;">🔑 비밀번호 설정 / 변경</button>
           <button id="btnBlastCopyUid" type="button" style="margin-top:8px; width:100%;">🪪 현재 수다방 ID 복사</button>
+          <button id="btnMainGatePair" type="button" style="margin-top:8px; width:100%;" disabled>🔗 메인 작업방 제어 ID 등록</button>
           <button id="btnBlastSession" type="button" class="bigPlayBtn" style="margin-top:8px; width:100%;" disabled>💣 지금 세션 폭파</button>
           <div class="hint" style="margin-top:8px;">
             • 비밀번호는 평문이 아닌 SHA-256 해시만 Firebase에 저장됩니다.<br/>
@@ -8393,6 +8394,18 @@ function computePresenceFromConn_(val){
   const SESSION_RESET_ADMIN_TTL_MS_ = 30 * 60 * 1000;
   const SESSION_ADMIN_CONFIG_SCHEMA_ = 'boom-admin-v12';
   const SESSION_ADMIN_CONFIG_PATH_ = () => 'sudaHub/adminConfigV1';
+  // ✅ v15: 메인 작업방은 다른 배포 주소라 수다방의 익명 UID와 다릅니다.
+  // 수다방 방장이 메인 작업방의 제어 UID를 이 경로에 한 번 등록합니다.
+  const MAIN_GATE_CONTROL_SCHEMA_ = 'boom-gate-control-v15';
+  const MAIN_GATE_CONTROL_PATH_ = () => 'sudaHub/gateControlV1';
+
+  let mainGateControlCache_ = {
+    loaded: false,
+    loading: false,
+    mainGateUid: '',
+    updatedAt: 0,
+    error: ''
+  };
 
   let sessionAdminConfigCache_ = {
     loaded: false,
@@ -8460,6 +8473,33 @@ function computePresenceFromConn_(val){
     return sessionAdminConfigCache_;
   }
 
+  async function loadMainGateControlConfig_(force){
+    if (!force && (mainGateControlCache_.loaded || mainGateControlCache_.loading)) return mainGateControlCache_;
+    mainGateControlCache_.loading = true;
+    mainGateControlCache_.error = '';
+    try{
+      await window.FB.ensureAnonAuth();
+      if (!isSudaSessionAdmin_()){
+        mainGateControlCache_ = { loaded:true, loading:false, mainGateUid:'', updatedAt:0, error:'' };
+        refreshSessionResetAdminUi_();
+        return mainGateControlCache_;
+      }
+      const snap = await window.FB.get(window.FB.ref(window.FB.db, MAIN_GATE_CONTROL_PATH_()));
+      const raw = snap && snap.exists && snap.exists() ? (snap.val() || {}) : {};
+      mainGateControlCache_ = {
+        loaded: true,
+        loading: false,
+        mainGateUid: String(raw.mainGateUid || '').trim(),
+        updatedAt: Number(raw.updatedAt || 0) || 0,
+        error: ''
+      };
+    }catch(e){
+      mainGateControlCache_ = { loaded:true, loading:false, mainGateUid:'', updatedAt:0, error:String(e && e.message ? e.message : e || '') };
+    }
+    refreshSessionResetAdminUi_();
+    return mainGateControlCache_;
+  }
+
   function refreshSessionResetAdminUi_(){
     try{
       const stateEl = $('blastAdminState');
@@ -8469,6 +8509,7 @@ function computePresenceFromConn_(val){
       const lockBtn = $('btnBlastAdminLock');
       const passwordBtn = $('btnBlastAdminPassword');
       const copyUidBtn = $('btnBlastCopyUid');
+      const mainGatePairBtn = $('btnMainGatePair');
       const isOwner = isSudaSessionAdmin_();
       const configured = sessionAdminPasswordConfigured_();
       const unlocked = isSessionResetAdminUnlocked_();
@@ -8498,6 +8539,14 @@ function computePresenceFromConn_(val){
         passwordBtn.textContent = configured ? '🔑 비밀번호 변경' : '🔑 비밀번호 설정';
       }
       if (copyUidBtn) copyUidBtn.disabled = false;
+      if (mainGatePairBtn){
+        const paired = !!String(mainGateControlCache_.mainGateUid || '').trim();
+        mainGatePairBtn.disabled = !unlocked;
+        mainGatePairBtn.textContent = paired ? '🔗 메인 작업방 제어 ID 변경' : '🔗 메인 작업방 제어 ID 등록';
+        mainGatePairBtn.title = unlocked
+          ? (paired ? '등록된 메인 작업방 제어 ID를 바꿉니다.' : '메인 작업방에서 복사한 제어 ID를 등록합니다.')
+          : '먼저 관리자 인증을 해주세요.';
+      }
     }catch(e){}
   }
 
@@ -8516,6 +8565,58 @@ function computePresenceFromConn_(val){
     showOverlay('🪪 현재 수다방 ID 복사 완료', '관리자 버튼이 계속 잠겨 있으면 이 값을 보내 주세요. 현재 페이지의 Firebase UID를 확인할 수 있어요.');
   }
   window.copyCurrentSudaUid_ = copyCurrentSudaUid_;
+
+  function isPlausibleFirebaseUid_(value){
+    return /^[A-Za-z0-9_-]{20,128}$/.test(String(value || '').trim());
+  }
+
+  async function openMainGatePairing_(){
+    const authorized = await ensureSessionResetAdmin_('');
+    if (!authorized) return;
+    await loadMainGateControlConfig_(true);
+    const current = String(mainGateControlCache_.mainGateUid || '');
+    showOverlayHtml(
+      current ? '🔗 메인 작업방 제어 ID 변경' : '🔗 메인 작업방 제어 ID 등록',
+      `<div class="noticeBox">
+        <div class="noticeMeta">메인 작업방 ☰ → 관리자 인증 → <b>🪪 메인 수다 제어 ID 복사</b>로 복사한 값을 붙여넣어 주세요.</div>
+        <input id="mainGateOwnerUidInput" autocomplete="off" spellcheck="false" placeholder="메인 작업방 제어 ID 붙여넣기" value="${escapeHtml(current)}" style="margin-top:10px;" />
+        <div class="noticeActions" style="margin-top:10px;">
+          <button class="miniBtn" type="button" onclick="window.saveMainGatePairing_()">🔗 등록</button>
+          <button class="miniBtn" type="button" onclick="window.hideOverlay()">취소</button>
+        </div>
+        <div class="noticeHelp">※ 수다방과 메인 작업방은 배포 주소가 달라 Firebase 익명 ID도 달라질 수 있어요. 한 번 등록해 두면 메인에서 수다방 열기·닫기를 할 수 있습니다.</div>
+      </div>`
+    );
+    setTimeout(()=>{ try{ $('mainGateOwnerUidInput')?.focus(); }catch(e){} }, 50);
+  }
+
+  async function saveMainGatePairing_(){
+    const authorized = await ensureSessionResetAdmin_('');
+    if (!authorized) return;
+    const mainGateUid = String($('mainGateOwnerUidInput')?.value || '').trim();
+    if (!isPlausibleFirebaseUid_(mainGateUid)){
+      alert('Firebase 제어 ID 형식이 올바르지 않아요. 메인 작업방에서 “🪪 메인 수다 제어 ID 복사”를 다시 눌러 붙여넣어 주세요.');
+      return;
+    }
+    try{
+      const now = Date.now();
+      await window.FB.set(window.FB.ref(window.FB.db, MAIN_GATE_CONTROL_PATH_()), {
+        mainGateUid,
+        updatedAt: now,
+        updatedBy: sudaSessionAdminUid_(),
+        schemaVersion: MAIN_GATE_CONTROL_SCHEMA_
+      });
+      mainGateControlCache_ = { loaded:true, loading:false, mainGateUid, updatedAt:now, error:'' };
+      refreshSessionResetAdminUi_();
+      showOverlay('✅ 메인 작업방 제어 ID 등록 완료', '이제 메인 작업방에서 오늘 수다방 열기와 닫기를 사용할 수 있어요. 메인 작업방을 새로고침한 뒤 다시 시도해 주세요.');
+    }catch(e){
+      console.warn('saveMainGatePairing failed', e);
+      alert('메인 작업방 제어 ID 저장에 실패했습니다. 수다방 RTDB Rules v15가 Publish됐는지 확인해 주세요.\n\n' + (e && e.message ? e.message : e));
+    }
+  }
+
+  window.openMainGatePairing_ = openMainGatePairing_;
+  window.saveMainGatePairing_ = saveMainGatePairing_;
 
   async function openSessionAdminPasswordSetup_(){
     try{ await window.FB.ensureAnonAuth(); }catch(e){}
@@ -10687,15 +10788,22 @@ function toggleTopbarMobile_(force){
     $('btnBlastAdminLock')?.addEventListener('click', ()=>{ lockSessionResetAdmin_(); });
     $('btnBlastAdminPassword')?.addEventListener('click', async ()=>{ await openSessionAdminPasswordSetup_(); });
     $('btnBlastCopyUid')?.addEventListener('click', async ()=>{ await copyCurrentSudaUid_(); });
+    $('btnMainGatePair')?.addEventListener('click', async ()=>{ await openMainGatePairing_(); });
     $('btnBlastSession')?.addEventListener('click', async ()=>{ await runSessionResetFromAdminUi_(); });
     try{ refreshSessionResetAdminUi_(); }catch(e){}
     try{
       onAuthStateChanged(auth, (user)=>{
         try{ refreshSessionResetAdminUi_(); }catch(e){}
-        if (user){ loadSessionAdminPasswordConfig_(true).catch(()=>{}); }
+        if (user){
+          loadSessionAdminPasswordConfig_(true).catch(()=>{});
+          loadMainGateControlConfig_(true).catch(()=>{});
+        }
       });
     }catch(e){}
-    try{ window.FB.ensureAnonAuth().then(()=>loadSessionAdminPasswordConfig_(true)).catch(()=>{}); }catch(e){}
+    try{ window.FB.ensureAnonAuth().then(()=>{
+      loadSessionAdminPasswordConfig_(true).catch(()=>{});
+      loadMainGateControlConfig_(true).catch(()=>{});
+    }).catch(()=>{}); }catch(e){}
     document.addEventListener('click', (e)=>{
       const mp = $('menuPanel');
       if (!mp) return;
