@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>💣Boom!</title>
+  <title>💣Boom!</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
   <style>
     :root{
@@ -2751,7 +2751,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   // 1) 아래 URL에 배포한 Apps Script 웹앱 주소를 붙여 넣습니다.
   // 2) 실제 이미지는 Google Drive에 저장되고, RTDB 메시지에는 URL/파일명만 기록됩니다.
   // =====================
-  const DRIVE_IMAGE_UPLOADER_URL = "https://script.google.com/macros/s/AKfycbw-Wbgqu0a1Zl_gDgsZvkHilvJJdymEZ2k3fr5X6tCV_yeKKWnCLQaWsRlZY_X864NSJg/exec"; // 예: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+  const DRIVE_IMAGE_UPLOADER_URL = ""; // 예: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
   const DRIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
   const DRIVE_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
   let pendingDriveImage_ = null;
@@ -3474,13 +3474,18 @@ function escapeHtml(s){
   return (n < 2e12) ? Math.floor(n*1000) : Math.floor(n);
 }
 
+const SUDA_ACCESS_STATE_VERSION_ = "event-gate-v4-host-explicit";
 async function assertSudaRoomOpen_(db, gateKey){
   const ref = window.FB.ref(db, `rooms/${gateKey}/access/sudaRoomState`);
   const snap = await window.FB.get(ref);
   const state = (snap && snap.exists && snap.exists()) ? (snap.val() || {}) : {};
   const today = dayKeySeoul_();
-  if(!(state.active === true && String(state.dayKey || "") === String(today))){
-    showOverlay("수다방 대기", "이벤트 수다방은 방장이 열었을 때만 입장할 수 있어요. 대시보드에서 오픈 소식이 뜬 뒤에 다시 들어와 주세요.");
+  if(!(
+    state.active === true &&
+    String(state.dayKey || "") === String(today) &&
+    String(state.version || "") === SUDA_ACCESS_STATE_VERSION_
+  )){
+    showOverlay("수다방 대기", "이벤트 수다방은 방장이 오늘 관리자 설정에서 열었을 때만 입장할 수 있어요. 대시보드에 오픈 소식이 뜬 뒤에 다시 들어와 주세요.");
     const err = new Error("suda room is not active today");
     err.code = "SUDA_ROOM_NOT_ACTIVE";
     throw err;
