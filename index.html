@@ -1091,7 +1091,7 @@
 .nickName{ font-weight: 1000; }
 .msgText{ vertical-align: middle; }
 
-    /* ✅ Drive 이미지 첨부: Firebase에는 URL만 저장하고, 채팅에서 바로 미리보기 */
+    /* ✅ 채팅 이미지 첨부: 말풍선 안 미리보기 + 선택/드래그 업로드 */
     .chatImageLink{
       display:block;
       margin-top:8px;
@@ -1118,11 +1118,11 @@
       text-decoration:underline;
       text-underline-offset:2px;
     }
+    #sudaImageFile{ display:none; }
     .imagePendingBar{
       display:none;
       align-items:center;
-      justify-content:space-between;
-      gap:8px;
+      gap:9px;
       margin-top:8px;
       padding:8px 10px;
       border:1px dashed var(--line);
@@ -1132,14 +1132,35 @@
       font-weight:900;
     }
     .imagePendingBar.show{ display:flex; }
-    .imagePendingBar button{ padding:5px 8px; border-radius:10px; font-size:12px; }
-    .driveUploaderFrame{
-      width:min(460px, 88vw);
-      height:300px;
-      border:0;
-      border-radius:14px;
+    .imagePendingThumb{
+      display:none;
+      width:38px;
+      height:38px;
+      flex:0 0 38px;
+      object-fit:cover;
+      border-radius:9px;
+      border:1px solid rgba(0,0,0,.10);
       background:#fff;
     }
+    .imagePendingThumb.show{ display:block; }
+    .imagePendingCopy{ min-width:0; flex:1; display:flex; flex-direction:column; gap:2px; }
+    .imagePendingTitle{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .imagePendingSub{ font-size:11px; font-weight:800; opacity:.70; }
+    .imagePendingActions{ display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+    .imagePendingBar button{ padding:6px 8px; border-radius:10px; font-size:12px; }
+    .imagePendingBar button.primaryAttach{
+      border-color:rgba(164,74,118,.26);
+      background:rgba(255,255,255,.86);
+      color:#68244d;
+    }
+    .imageDropZone{ transition:box-shadow .14s ease, outline-color .14s ease; }
+    .imageDropZone.dragOver{
+      outline:2px dashed rgba(188,75,134,.62);
+      outline-offset:4px;
+      border-radius:14px;
+      box-shadow:0 0 0 6px rgba(255,209,232,.24);
+    }
+    .sudaUploadBridge{ display:none !important; }
 
     .mine{ align-items:flex-end; }
     .mine .bubble{ background: #dffaf3; }
@@ -2595,15 +2616,23 @@ body{
 
             <div class="typingWrap" id="typingWrap">
         <button id="btnPicker" class="pickerBtn" type="button" title="이모지/명령어">🙂</button>
-        <button id="btnImageUpload" class="pickerBtn" type="button" title="사진 올리기">📷</button>
+        <button id="btnImageUpload" class="pickerBtn" type="button" title="사진 선택">📷</button>
+        <input id="sudaImageFile" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
         <div id="typingBar" class="typingBar" aria-live="polite"><span id="typingText" class="typingText"></span></div>
       </div>
       <div class="imagePendingBar" id="imagePendingBar" aria-live="polite">
-        <span id="imagePendingText">🖼 이미지가 첨부됐어요.</span>
-        <button id="btnImageCancel" type="button">첨부 취소</button>
+        <img id="imagePendingThumb" class="imagePendingThumb" alt="선택한 사진 미리보기" />
+        <div class="imagePendingCopy">
+          <span id="imagePendingText" class="imagePendingTitle">사진 선택됨</span>
+          <span id="imagePendingSub" class="imagePendingSub"></span>
+        </div>
+        <div class="imagePendingActions">
+          <button id="btnImageConfirm" class="primaryAttach" type="button">파일 올리기</button>
+          <button id="btnImageCancel" type="button">취소</button>
+        </div>
       </div>
-      <div class="sendRow">
-        <textarea id="msg" rows="2" placeholder="메시지 입력 (Enter=전송 / Shift+Enter=줄바꿈)"></textarea>
+      <div class="sendRow imageDropZone" id="imageDropZone">
+        <textarea id="msg" rows="2" placeholder="메시지 입력 (Enter=전송 / Shift+Enter=줄바꿈 / 사진을 끌어 놓아 첨부)"></textarea>
         <button id="sendBtn" type="button">전송</button>
       </div>
 
@@ -2747,15 +2776,21 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   };
 
   // =====================
-  // 🖼 Google Drive image uploader (Firebase Storage 미사용)
-  // 1) 아래 URL에 배포한 Apps Script 웹앱 주소를 붙여 넣습니다.
-  // 2) 실제 이미지는 Google Drive에 저장되고, RTDB 메시지에는 URL/파일명만 기록됩니다.
+  // 🖼 사진 첨부 브리지
+  // - 이미지 파일은 별도 저장소에 올리고, RTDB에는 이미지 URL만 남깁니다.
+  // - 사용자는 📷 버튼 또는 입력창 드래그앤드롭으로 파일을 고른 뒤
+  //   "파일 올리기"를 한 번 눌러 첨부합니다.
   // =====================
-  const DRIVE_IMAGE_UPLOADER_URL = ""; // 예: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+  const DRIVE_IMAGE_UPLOADER_URL = "https://script.google.com/macros/s/AKfycbxCMR5eCHtYxpdIPkSfw8SVN_xPqqEJ_3r4PsjpMtBz4Jln3SoGSJkaIcCMg8006P8y5Q/exec"; // 배포한 Apps Script 웹앱의 /exec 주소
   const DRIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
   const DRIVE_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
   let pendingDriveImage_ = null;
+  let pendingLocalImage_ = null;
   let driveUploadNonce_ = "";
+  let driveUploadBusy_ = false;
+  let driveUploadReady_ = false;
+  let driveUploadTimer_ = 0;
+  let driveUploadPayload_ = null;
 
   function safeHttpUrl_(raw){
     try{
@@ -2784,7 +2819,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     while((m = re.exec(text))){
       if(m.index > cursor) el.appendChild(document.createTextNode(text.slice(cursor, m.index)));
       let candidate = String(m[0] || "");
-      // 문장 끝에 붙는 자주 쓰이는 문장부호는 링크에서 뺍니다.
       while(/[.,!?;:)]$/.test(candidate)) candidate = candidate.slice(0, -1);
       const href = safeHttpUrl_(candidate);
       if(href){
@@ -2804,74 +2838,282 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     }
     if(cursor < text.length) el.appendChild(document.createTextNode(text.slice(cursor)));
   }
+  function humanImageSize_(size){
+    const n = Math.max(0, Number(size || 0) || 0);
+    if(n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))}KB`;
+    return `${(n / 1024 / 1024).toFixed(1)}MB`;
+  }
+  function resetPendingPreview_(){
+    if(pendingLocalImage_ && pendingLocalImage_.previewUrl){
+      try{ URL.revokeObjectURL(pendingLocalImage_.previewUrl); }catch(e){}
+    }
+  }
   function renderPendingDriveImage_(){
     const bar = document.getElementById("imagePendingBar");
     const text = document.getElementById("imagePendingText");
-    if(!bar || !text) return;
-    const image = normalizeDriveImage_(pendingDriveImage_);
-    if(!image){
+    const sub = document.getElementById("imagePendingSub");
+    const thumb = document.getElementById("imagePendingThumb");
+    const confirm = document.getElementById("btnImageConfirm");
+    const cancel = document.getElementById("btnImageCancel");
+    if(!bar || !text || !sub || !thumb || !confirm || !cancel) return;
+
+    const uploaded = normalizeDriveImage_(pendingDriveImage_);
+    const local = pendingLocalImage_;
+    if(!uploaded && !local){
       bar.classList.remove("show");
-      text.textContent = "🖼 이미지가 첨부됐어요.";
+      thumb.removeAttribute("src");
+      thumb.classList.remove("show");
       return;
     }
-    text.textContent = `🖼 ${image.name || "이미지"} 첨부됨`;
+
     bar.classList.add("show");
+    confirm.style.display = "";
+    confirm.disabled = false;
+    cancel.disabled = false;
+
+    if(uploaded){
+      text.textContent = `🖼 ${uploaded.name || "사진"} 첨부됨`;
+      sub.textContent = "전송을 누르면 채팅에 올라가요.";
+      if(uploaded.url){
+        thumb.src = uploaded.url;
+        thumb.classList.add("show");
+      }
+      confirm.textContent = "다른 파일";
+      return;
+    }
+
+    const file = local.file;
+    text.textContent = `🖼 ${file.name || "사진"} 선택됨`;
+    sub.textContent = driveUploadBusy_ ? "파일 올리는 중…" : `${humanImageSize_(file.size)} · 파일 올리기를 눌러 첨부`;
+    if(local.previewUrl){
+      thumb.src = local.previewUrl;
+      thumb.classList.add("show");
+    }
+    confirm.textContent = driveUploadBusy_ ? "올리는 중…" : "파일 올리기";
+    confirm.disabled = !!driveUploadBusy_;
+    cancel.disabled = !!driveUploadBusy_;
   }
   function clearPendingDriveImage_(){
+    resetPendingPreview_();
+    pendingLocalImage_ = null;
     pendingDriveImage_ = null;
+    driveUploadPayload_ = null;
+    driveUploadBusy_ = false;
+    clearDriveUploadTimer_();
     renderPendingDriveImage_();
+  }
+  function clearDriveUploadTimer_(){
+    if(driveUploadTimer_){
+      clearTimeout(driveUploadTimer_);
+      driveUploadTimer_ = 0;
+    }
   }
   function makeDriveUploadNonce_(){
     try{ return crypto.randomUUID(); }catch(e){ return `drive_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
   }
-  function openDriveImageUploader_(){
-    if(!DRIVE_IMAGE_UPLOADER_URL){
-      showOverlay("사진 업로드 준비", "Google Drive 업로더 주소가 아직 연결되지 않았어요. 함께 드린 Apps Script 파일을 배포한 뒤, 수다방 코드의 DRIVE_IMAGE_UPLOADER_URL에 /exec 주소를 넣어주세요.");
+  function validateLocalImageFile_(file){
+    if(!file) return "사진 파일을 골라 주세요.";
+    const allowed = new Set(DRIVE_IMAGE_ACCEPT.split(","));
+    if(!allowed.has(String(file.type || "").toLowerCase())) return "JPG, PNG, WEBP, GIF 형식만 올릴 수 있어요.";
+    if(Number(file.size || 0) > DRIVE_IMAGE_MAX_BYTES) return "이미지는 5MB 이하로 올려 주세요.";
+    return "";
+  }
+  function selectLocalDriveImage_(file){
+    const error = validateLocalImageFile_(file);
+    if(error){
+      showOverlay("사진 첨부", error);
       return;
     }
+    resetPendingPreview_();
+    pendingDriveImage_ = null;
+    pendingLocalImage_ = {
+      file,
+      previewUrl: URL.createObjectURL(file)
+    };
+    driveUploadBusy_ = false;
+    renderPendingDriveImage_();
+  }
+  function chooseDriveImageFile_(){
     if(!sessionId){
-      showOverlay("사진 업로드", "수다방에 연결된 뒤에 사진을 올릴 수 있어요.");
+      showOverlay("사진 첨부", "수다방에 연결된 뒤에 사진을 올릴 수 있어요.");
       return;
     }
+    const input = document.getElementById("sudaImageFile");
+    if(!input) return;
+    input.value = "";
+    input.click();
+  }
+  function getDriveUploadBridge_(){
+    return document.getElementById("sudaDriveUploadBridge");
+  }
+  function disposeDriveUploadBridge_(){
+    const frame = getDriveUploadBridge_();
+    if(frame) frame.remove();
+    driveUploadReady_ = false;
+  }
+  function makeDriveUploadBridge_(){
+    if(!DRIVE_IMAGE_UPLOADER_URL) throw new Error("사진 업로드 설정이 아직 연결되지 않았어요.");
+    disposeDriveUploadBridge_();
     driveUploadNonce_ = makeDriveUploadNonce_();
-    let uploaderUrl = "";
+    let src = "";
     try{
       const u = new URL(DRIVE_IMAGE_UPLOADER_URL);
-      u.searchParams.set("parentOrigin", location.origin);
+      u.searchParams.set("parentOrigin", location.origin || "");
       u.searchParams.set("nonce", driveUploadNonce_);
       u.searchParams.set("room", String(sessionId || ""));
       u.searchParams.set("nick", String(myName() || "익명").slice(0, 12));
       u.searchParams.set("maxBytes", String(DRIVE_IMAGE_MAX_BYTES));
-      uploaderUrl = u.toString();
+      u.searchParams.set("bridge", "1");
+      src = u.toString();
     }catch(e){
-      showOverlay("사진 업로드", "Google Drive 업로더 주소 형식이 올바르지 않아요.");
+      throw new Error("사진 업로드 주소 형식이 올바르지 않아요.");
+    }
+    const frame = document.createElement("iframe");
+    frame.id = "sudaDriveUploadBridge";
+    frame.className = "sudaUploadBridge";
+    frame.title = "사진 업로드 처리";
+    frame.src = src;
+    frame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(frame);
+    return frame;
+  }
+  async function readFileAsDataUrl_(file){
+    return new Promise((resolve, reject)=>{
+      const reader = new FileReader();
+      reader.onerror = ()=>reject(new Error("파일을 읽지 못했어요. 다시 골라 주세요."));
+      reader.onload = ()=>resolve(String(reader.result || ""));
+      reader.readAsDataURL(file);
+    });
+  }
+  async function uploadPendingDriveImage_(){
+    if(pendingDriveImage_){
+      chooseDriveImageFile_();
       return;
     }
-    showOverlayHtml("🖼 사진 올리기", `<iframe id="sudaDriveUploaderFrame" class="driveUploaderFrame" title="Google Drive 사진 업로드" src="${escapeAttr(uploaderUrl)}" allow="clipboard-write"></iframe>`, false);
+    const local = pendingLocalImage_;
+    if(!local || !local.file) return;
+    const error = validateLocalImageFile_(local.file);
+    if(error){ showOverlay("사진 첨부", error); return; }
+    if(driveUploadBusy_) return;
+
+    try{
+      driveUploadBusy_ = true;
+      renderPendingDriveImage_();
+      const dataUrl = await readFileAsDataUrl_(local.file);
+      const frame = makeDriveUploadBridge_();
+      clearDriveUploadTimer_();
+      driveUploadTimer_ = setTimeout(()=>{
+        if(!driveUploadBusy_) return;
+        driveUploadBusy_ = false;
+        driveUploadPayload_ = null;
+        disposeDriveUploadBridge_();
+        renderPendingDriveImage_();
+        showOverlay("사진 첨부", "파일 올리기 준비 시간이 초과됐어요. 업로더 배포 상태를 확인해 주세요.");
+      }, 15000);
+      driveUploadPayload_ = {
+        dataUrl,
+        filename: String(local.file.name || "image"),
+        mimeType: String(local.file.type || ""),
+        size: Number(local.file.size || 0),
+        room: String(sessionId || ""),
+        nick: String(myName() || "익명").slice(0, 12)
+      };
+    }catch(err){
+      driveUploadBusy_ = false;
+      driveUploadPayload_ = null;
+      clearDriveUploadTimer_();
+      renderPendingDriveImage_();
+      showOverlay("사진 첨부", (err && err.message) || "사진을 준비하지 못했어요.");
+    }
   }
   function handleDriveUploaderMessage_(event){
     try{
       const data = event && event.data;
       if(!data || data.source !== "boom-suda-drive-uploader") return;
       if(!driveUploadNonce_ || String(data.nonce || "") !== String(driveUploadNonce_)) return;
-      const frame = document.getElementById("sudaDriveUploaderFrame");
+      const frame = getDriveUploadBridge_();
       if(frame && event.source && frame.contentWindow !== event.source) return;
+
+      if(data.status === "ready"){
+        driveUploadReady_ = true;
+        const payload = driveUploadPayload_;
+        if(!payload || !payload.dataUrl) throw new Error("사진 데이터를 준비하지 못했어요.");
+        frame.contentWindow?.postMessage({
+          source: "boom-suda-drive-parent",
+          action: "upload",
+          nonce: driveUploadNonce_,
+          payload
+        }, "*");
+        return;
+      }
+      if(data.status === "error"){
+        throw new Error(String(data.message || "파일을 올리지 못했어요."));
+      }
       if(data.status === "cancel"){
-        hideOverlay();
+        driveUploadBusy_ = false;
+        driveUploadPayload_ = null;
+        clearDriveUploadTimer_();
+        disposeDriveUploadBridge_();
+        renderPendingDriveImage_();
         return;
       }
       if(data.status !== "uploaded") return;
+
       const image = normalizeDriveImage_(data.image || {});
-      if(!image) throw new Error("유효한 이미지 URL을 받지 못했어.");
+      if(!image) throw new Error("업로드된 이미지 정보를 받지 못했어요.");
+      resetPendingPreview_();
+      pendingLocalImage_ = null;
       pendingDriveImage_ = image;
+      driveUploadPayload_ = null;
+      driveUploadBusy_ = false;
+      clearDriveUploadTimer_();
+      disposeDriveUploadBridge_();
       renderPendingDriveImage_();
-      hideOverlay();
       try{ document.getElementById("msg")?.focus(); }catch(_e){}
     }catch(err){
-      console.warn("Drive image uploader message failed", err);
-      showOverlay("사진 업로드", (err && err.message) || "이미지 정보를 처리하지 못했어.");
+      console.warn("Drive image bridge failed", err);
+      driveUploadBusy_ = false;
+      driveUploadPayload_ = null;
+      clearDriveUploadTimer_();
+      disposeDriveUploadBridge_();
+      renderPendingDriveImage_();
+      showOverlay("사진 첨부", (err && err.message) || "파일을 올리지 못했어요.");
     }
   }
+  function initDriveImageComposer_(){
+    const input = document.getElementById("sudaImageFile");
+    const dropZone = document.getElementById("imageDropZone");
+    if(input && !input.__sudaImageBound){
+      input.__sudaImageBound = true;
+      input.addEventListener("change", ()=>{
+        const file = input.files && input.files[0];
+        if(file) selectLocalDriveImage_(file);
+      });
+    }
+    if(dropZone && !dropZone.__sudaImageDropBound){
+      dropZone.__sudaImageDropBound = true;
+      const leave = ()=>dropZone.classList.remove("dragOver");
+      dropZone.addEventListener("dragenter", (e)=>{
+        if(!e.dataTransfer?.types?.includes("Files")) return;
+        e.preventDefault();
+        dropZone.classList.add("dragOver");
+      });
+      dropZone.addEventListener("dragover", (e)=>{
+        if(!e.dataTransfer?.types?.includes("Files")) return;
+        e.preventDefault();
+        dropZone.classList.add("dragOver");
+      });
+      dropZone.addEventListener("dragleave", leave);
+      dropZone.addEventListener("drop", (e)=>{
+        if(!e.dataTransfer?.files?.length) return;
+        e.preventDefault();
+        leave();
+        selectLocalDriveImage_(e.dataTransfer.files[0]);
+      });
+    }
+    renderPendingDriveImage_();
+  }
+  function openDriveImageUploader_(){ chooseDriveImageFile_(); }
   window.addEventListener("message", handleDriveUploaderMessage_);
 
 
@@ -3718,6 +3960,10 @@ initChat_(roomId);
     const msgEl = $('msg');
     const text = (msgEl.value || '').trim();
     const attachedImage = normalizeDriveImage_(pendingDriveImage_);
+    if(pendingLocalImage_ && !attachedImage){
+      showOverlay('사진 첨부', driveUploadBusy_ ? '사진을 올리는 중이에요. 잠시만 기다려 주세요.' : '사진을 보내려면 먼저 파일 올리기를 눌러 주세요.');
+      return;
+    }
     if (!text && !attachedImage) return;
 
     
@@ -8775,6 +9021,7 @@ function setOverlayResizable_(on){
 function showOverlayHtml(title, html, resizable){
   // ✅ game overlays: no inner scroll + hide bottom OK button
   const isGame = /타이핑\s*레이스|⌨️|산성비|☔/i.test(String(title||''));
+  const isFileDialog = /사진\s*(올리기|첨부)|파일\s*올리기/i.test(String(title||''));
   try{ setOverlayResizable_(!!resizable && !isGame); }catch(e){}
   try{
     const card = $('overlayCard');
@@ -8793,7 +9040,7 @@ function showOverlayHtml(title, html, resizable){
     }
     const ok = $('ovOkBtn');
     if (ok){
-      ok.style.display = isGame ? 'none' : '';
+      ok.style.display = (isGame || isFileDialog) ? 'none' : '';
     }
   }catch(e){}
 
@@ -9980,9 +10227,10 @@ if (tbBtn){
 
     // chat send
     $('sendBtn')?.addEventListener('click', sendChat_);
-    $('btnImageUpload')?.addEventListener('click', openDriveImageUploader_);
+    $('btnImageUpload')?.addEventListener('click', chooseDriveImageFile_);
+    $('btnImageConfirm')?.addEventListener('click', uploadPendingDriveImage_);
     $('btnImageCancel')?.addEventListener('click', clearPendingDriveImage_);
-    renderPendingDriveImage_();
+    initDriveImageComposer_();
     $('msg')?.addEventListener('keydown', (e)=>{
       if (e.key === 'Enter' && !e.shiftKey){
         e.preventDefault();
