@@ -2583,7 +2583,7 @@ body{
         <!-- ✅ v12: 폭파 관리자 인증 + 비밀번호 설정 UI -->
         <div class="block" id="blastAdminBlock">
           <div class="labelRow">
-            <span class="label">💣 세션 폭파 관리</span>
+            <span class="label">💣 세션 폭파 관리 · 복구 가능</span>
             <span class="val" id="blastAdminState">확인 중…</span>
           </div>
           <div class="hint" id="blastAdminHint">
@@ -2781,16 +2781,26 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 
 
   // =====================
-  // 💣 수다방 세션(폭파) 관리자 잠금 v10
-  // - 실제 권한은 RTDB Rules의 UID 제한으로 확정됩니다.
-  // - 아래 UID는 현재 수다방 방장 Firebase UID와 같아야 합니다.
-  const SUDA_SESSION_ADMIN_UID_ = 'carcV95666TnsWK072Jnmas9lMk1';
+  // 💣 수다방 세션(폭파) 관리자 v16
+  // - 익명 Firebase UID는 배포 주소/브라우저 데이터 변화로 달라질 수 있습니다.
+  // - 따라서 UID 하나를 코드에 고정하지 않고, 관리자 비밀번호로 현재 브라우저를
+  //   다시 연결(복구)하는 adminControlV2 구조를 사용합니다.
+  // - 아래 bootstrap UID는 *기존 비밀번호 설정 자체가 없는 경우에만* 최초 설정을
+  //   허용하는 1회성 안전장치입니다. v2 설정이 생기면 더 이상 권한을 주지 않습니다.
+  const SESSION_ADMIN_BOOTSTRAP_UID_ = 'XWX4XmRr8POWwSi79VWky4kCrpl2';
 
   function sudaSessionAdminUid_(){
     try{ return String(auth.currentUser?.uid || ''); }catch(e){ return ''; }
   }
   function isSudaSessionAdmin_(){
-    return sudaSessionAdminUid_() === SUDA_SESSION_ADMIN_UID_;
+    try{
+      const uid = sudaSessionAdminUid_();
+      const ownerUid = String(sessionAdminConfigCache_?.ownerUid || '');
+      return !!uid && !!ownerUid && uid === ownerUid;
+    }catch(e){ return false; }
+  }
+  function isSessionAdminBootstrapDevice_(){
+    return sudaSessionAdminUid_() === SESSION_ADMIN_BOOTSTRAP_UID_;
   }
 
   async function ensureAnonAuth(){
@@ -8385,17 +8395,18 @@ function computePresenceFromConn_(val){
 
   
   // =====================
-  // Notice + session-reset admin password (Firebase RTDB config)
+  // Notice + recoverable session-reset admin (v16)
   // =====================
-  // v12: 비밀번호 해시는 코드에 박지 않고, 방장 UID만 읽고 쓸 수 있는 RTDB 경로에 저장합니다.
-  // 실제 폭파 권한은 RTDB Rules의 방장 Firebase UID 제한이 최종으로 막습니다.
+  // v16 핵심:
+  // 1) 현재 방장 UID는 adminControlV2에 저장합니다.
+  // 2) UID가 바뀌어도 기존 관리자 비밀번호를 입력하면 Rules가 해시 일치 여부를
+  //    검증하고 현재 UID로 방장 연결을 옮깁니다.
+  // 3) 기존 v12 adminConfigV1은 최초 마이그레이션 시 비밀번호 검증용으로만 유지합니다.
   const NOTICE_ADMIN_SS_KEY_ = 'VENT_NOTICE_ADMIN_OK_V1';
-  const SESSION_RESET_ADMIN_LS_KEY_ = 'BOOM_SESSION_ADMIN_OK_V12';
+  const SESSION_RESET_ADMIN_LS_KEY_ = 'BOOM_SESSION_ADMIN_OK_V16';
   const SESSION_RESET_ADMIN_TTL_MS_ = 30 * 60 * 1000;
-  const SESSION_ADMIN_CONFIG_SCHEMA_ = 'boom-admin-v12';
-  const SESSION_ADMIN_CONFIG_PATH_ = () => 'sudaHub/adminConfigV1';
-  // ✅ v15: 메인 작업방은 다른 배포 주소라 수다방의 익명 UID와 다릅니다.
-  // 수다방 방장이 메인 작업방의 제어 UID를 이 경로에 한 번 등록합니다.
+  const SESSION_ADMIN_CONFIG_SCHEMA_ = 'boom-admin-v16-recoverable';
+  const SESSION_ADMIN_CONFIG_PATH_ = () => 'sudaHub/adminControlV2';
   const MAIN_GATE_CONTROL_SCHEMA_ = 'boom-gate-control-v15';
   const MAIN_GATE_CONTROL_PATH_ = () => 'sudaHub/gateControlV1';
 
@@ -8411,6 +8422,7 @@ function computePresenceFromConn_(val){
     loaded: false,
     loading: false,
     exists: false,
+    ownerUid: '',
     passwordHash: '',
     updatedAt: 0,
     error: ''
@@ -8420,7 +8432,7 @@ function computePresenceFromConn_(val){
     return /^[a-f0-9]{64}$/i.test(String(value || ''));
   }
   function sessionAdminPasswordConfigured_(){
-    return !!(sessionAdminConfigCache_.exists && isValidAdminPasswordHash_(sessionAdminConfigCache_.passwordHash));
+    return !!(isSudaSessionAdmin_() && sessionAdminConfigCache_.exists && isValidAdminPasswordHash_(sessionAdminConfigCache_.passwordHash));
   }
   function getSessionResetAdminUntil_(){
     try{ return Number(localStorage.getItem(SESSION_RESET_ADMIN_LS_KEY_) || 0) || 0; }catch(e){ return 0; }
@@ -8445,29 +8457,34 @@ function computePresenceFromConn_(val){
     sessionAdminConfigCache_.error = '';
     try{
       await window.FB.ensureAnonAuth();
-      // 설정값은 방장 UID만 읽을 수 있습니다. 일반 계정은 아예 읽지 않습니다.
-      if (!isSudaSessionAdmin_()){
-        sessionAdminConfigCache_ = { loaded:true, loading:false, exists:false, passwordHash:'', updatedAt:0, error:'' };
-        refreshSessionResetAdminUi_();
-        return sessionAdminConfigCache_;
-      }
+      const uid = sudaSessionAdminUid_();
+      if (!uid) throw new Error('수다방 Firebase 로그인 정보를 읽지 못했어요.');
+      // Rules는 해당 ownerUid의 브라우저만 읽도록 막습니다.
       const snap = await window.FB.get(window.FB.ref(window.FB.db, SESSION_ADMIN_CONFIG_PATH_()));
       const raw = snap && snap.exists && snap.exists() ? (snap.val() || {}) : {};
+      const ownerUid = String(raw.ownerUid || '').trim();
       const hash = String(raw.passwordHash || '').toLowerCase();
+      const mine = ownerUid === uid;
       sessionAdminConfigCache_ = {
         loaded: true,
         loading: false,
-        exists: isValidAdminPasswordHash_(hash),
-        passwordHash: isValidAdminPasswordHash_(hash) ? hash : '',
+        exists: mine && isValidAdminPasswordHash_(hash),
+        ownerUid: mine ? ownerUid : '',
+        passwordHash: mine && isValidAdminPasswordHash_(hash) ? hash : '',
         updatedAt: Number(raw.updatedAt || 0) || 0,
-        error: ''
+        error: mine ? '' : 'NOT_OWNER'
       };
     }catch(e){
-      sessionAdminConfigCache_.loaded = true;
-      sessionAdminConfigCache_.loading = false;
-      sessionAdminConfigCache_.exists = false;
-      sessionAdminConfigCache_.passwordHash = '';
-      sessionAdminConfigCache_.error = String(e && e.message ? e.message : e || '');
+      // 일반 이용자는 읽기 권한이 없어도 정상입니다. 이때는 인증/복구 버튼만 보여 줍니다.
+      sessionAdminConfigCache_ = {
+        loaded: true,
+        loading: false,
+        exists: false,
+        ownerUid: '',
+        passwordHash: '',
+        updatedAt: 0,
+        error: String(e && e.message ? e.message : e || '')
+      };
     }
     refreshSessionResetAdminUi_();
     return sessionAdminConfigCache_;
@@ -8510,33 +8527,35 @@ function computePresenceFromConn_(val){
       const passwordBtn = $('btnBlastAdminPassword');
       const copyUidBtn = $('btnBlastCopyUid');
       const mainGatePairBtn = $('btnMainGatePair');
+      const uid = sudaSessionAdminUid_();
       const isOwner = isSudaSessionAdmin_();
       const configured = sessionAdminPasswordConfigured_();
       const unlocked = isSessionResetAdminUnlocked_();
 
       if (stateEl){
-        stateEl.textContent = unlocked ? '인증 완료' : (!isOwner ? '일반 계정' : (!sessionAdminConfigCache_.loaded ? '확인 중…' : (configured ? '방장 계정' : '비번 미설정')));
+        stateEl.textContent = unlocked ? '인증 완료' : (isOwner ? (configured ? '방장 계정' : '비번 미설정') : '복구 인증 필요');
       }
       if (hintEl){
         hintEl.textContent = unlocked
           ? '관리자 인증이 완료되었습니다. 이제 폭파 명령과 버튼을 사용할 수 있어요.'
-          : (!isOwner
-              ? '현재 브라우저는 등록된 수다방 방장 계정이 아니어서 폭파할 수 없어요.'
-              : (!sessionAdminConfigCache_.loaded
-                  ? '관리자 비밀번호 설정 상태를 확인하고 있어요…'
-                  : (configured
-                      ? '방장 계정입니다. 관리자 인증을 누르고 비밀번호를 확인해 주세요.'
-                      : '방장 계정입니다. 먼저 “비밀번호 설정 / 변경”에서 관리자 비밀번호를 만들어 주세요.')));
+          : (isOwner
+              ? (configured
+                  ? '방장 계정입니다. 관리자 인증을 누르고 비밀번호를 확인해 주세요.'
+                  : '방장 계정입니다. 먼저 비밀번호를 설정해 주세요.')
+              : (uid
+                  ? '브라우저 ID가 바뀌었어도 괜찮아요. “관리자 인증 / 복구”에서 기존 관리자 비밀번호를 입력하면 이 브라우저가 다시 방장으로 연결됩니다.'
+                  : '수다방 로그인 정보를 확인하고 있어요. 잠시 뒤 다시 눌러 주세요.'));
       }
       if (blastBtn) blastBtn.disabled = !unlocked;
       if (authBtn){
-        authBtn.textContent = unlocked ? '✅ 관리자 인증됨' : '🔐 관리자 인증';
-        authBtn.disabled = !isOwner || !configured;
+        authBtn.textContent = unlocked ? '✅ 관리자 인증됨' : (isOwner ? '🔐 관리자 인증' : '🔐 관리자 인증 / 복구');
+        authBtn.disabled = !uid;
       }
       if (lockBtn) lockBtn.disabled = !unlocked;
       if (passwordBtn){
         passwordBtn.disabled = !isOwner;
         passwordBtn.textContent = configured ? '🔑 비밀번호 변경' : '🔑 비밀번호 설정';
+        passwordBtn.title = isOwner ? '' : '먼저 “관리자 인증 / 복구”를 완료해 주세요.';
       }
       if (copyUidBtn) copyUidBtn.disabled = false;
       if (mainGatePairBtn){
@@ -8562,7 +8581,7 @@ function computePresenceFromConn_(val){
     }catch(e){
       window.prompt('아래 수다방 ID를 복사해 주세요.', uid);
     }
-    showOverlay('🪪 현재 수다방 ID 복사 완료', '관리자 버튼이 계속 잠겨 있으면 이 값을 보내 주세요. 현재 페이지의 Firebase UID를 확인할 수 있어요.');
+    showOverlay('🪪 현재 수다방 ID 복사 완료', '관리자 복구가 필요할 때 현재 페이지의 Firebase UID를 확인할 수 있어요.');
   }
   window.copyCurrentSudaUid_ = copyCurrentSudaUid_;
 
@@ -8611,7 +8630,7 @@ function computePresenceFromConn_(val){
       showOverlay('✅ 메인 작업방 제어 ID 등록 완료', '이제 메인 작업방에서 오늘 수다방 열기와 닫기를 사용할 수 있어요. 메인 작업방을 새로고침한 뒤 다시 시도해 주세요.');
     }catch(e){
       console.warn('saveMainGatePairing failed', e);
-      alert('메인 작업방 제어 ID 저장에 실패했습니다. 수다방 RTDB Rules v15가 Publish됐는지 확인해 주세요.\n\n' + (e && e.message ? e.message : e));
+      alert('메인 작업방 제어 ID 저장에 실패했습니다. 수다방 RTDB Rules v16이 Publish됐는지 확인해 주세요.\n\n' + (e && e.message ? e.message : e));
     }
   }
 
@@ -8621,7 +8640,7 @@ function computePresenceFromConn_(val){
   async function openSessionAdminPasswordSetup_(){
     try{ await window.FB.ensureAnonAuth(); }catch(e){}
     if (!isSudaSessionAdmin_()){
-      showOverlay('💣 관리자 계정이 아니에요', '비밀번호 설정과 변경은 등록된 수다방 방장 브라우저에서만 할 수 있어요.');
+      showOverlay('💣 먼저 관리자 인증이 필요해요', '현재 수다방 ID가 바뀐 상태예요. “관리자 인증 / 복구”에서 기존 관리자 비밀번호를 먼저 확인해 주세요.');
       refreshSessionResetAdminUi_();
       return;
     }
@@ -8637,7 +8656,7 @@ function computePresenceFromConn_(val){
           <button class="miniBtn" type="button" onclick="window.saveSessionAdminPasswordConfig_()">💾 저장</button>
           <button class="miniBtn" type="button" onclick="window.hideOverlay()">취소</button>
         </div>
-        <div class="noticeHelp">※ 비밀번호 원문은 저장하지 않고, SHA-256 해시만 방장 전용 Firebase 경로에 저장합니다.</div>
+        <div class="noticeHelp">※ 비밀번호 원문은 저장하지 않고 SHA-256 해시만 Firebase에 저장합니다.</div>
       </div>`
     );
     setTimeout(()=>{ try{ $('sessionAdminPasswordNew')?.focus(); }catch(e){} }, 50);
@@ -8646,7 +8665,7 @@ function computePresenceFromConn_(val){
   async function saveSessionAdminPasswordConfig_(){
     try{ await window.FB.ensureAnonAuth(); }catch(e){}
     if (!isSudaSessionAdmin_()){
-      showOverlay('💣 관리자 계정이 아니에요', '비밀번호 설정과 변경은 등록된 수다방 방장 브라우저에서만 할 수 있어요.');
+      showOverlay('💣 관리자 인증이 필요해요', '비밀번호를 바꾸려면 먼저 “관리자 인증 / 복구”를 완료해 주세요.');
       return;
     }
     const first = String($('sessionAdminPasswordNew')?.value || '');
@@ -8662,15 +8681,16 @@ function computePresenceFromConn_(val){
     try{
       const passwordHash = await sha256Hex_(first);
       const now = Date.now();
+      const ownerUid = sudaSessionAdminUid_();
       const payload = {
+        ownerUid,
         passwordHash,
         updatedAt: now,
-        updatedBy: sudaSessionAdminUid_(),
+        updatedBy: ownerUid,
         schemaVersion: SESSION_ADMIN_CONFIG_SCHEMA_
       };
       await window.FB.set(window.FB.ref(window.FB.db, SESSION_ADMIN_CONFIG_PATH_()), payload);
-      sessionAdminConfigCache_ = { loaded:true, loading:false, exists:true, passwordHash, updatedAt:now, error:'' };
-      // 비밀번호가 바뀌면 예전 브라우저 인증은 무효화하고, 설정한 방장만 새로 인증 처리합니다.
+      sessionAdminConfigCache_ = { loaded:true, loading:false, exists:true, ownerUid, passwordHash, updatedAt:now, error:'' };
       lockSessionResetAdmin_();
       setSessionResetAdminUnlocked_();
       showOverlay('✅ 관리자 비밀번호 저장 완료', '이제 공지 수정과 세션 폭파에 이 비밀번호를 사용할 수 있어요.');
@@ -8680,36 +8700,64 @@ function computePresenceFromConn_(val){
     }
   }
 
+  async function claimOrRecoverSessionAdmin_(passwordHash){
+    const uid = sudaSessionAdminUid_();
+    if (!uid) throw new Error('수다방 Firebase 로그인 정보를 읽지 못했어요.');
+    const now = Date.now();
+    const payload = {
+      ownerUid: uid,
+      passwordHash,
+      updatedAt: now,
+      updatedBy: uid,
+      schemaVersion: SESSION_ADMIN_CONFIG_SCHEMA_
+    };
+    // Rules가 두 가지 경우만 허용합니다.
+    // (1) 기존 adminControlV2 해시와 동일한 비밀번호
+    // (2) v12 adminConfigV1의 기존 해시와 동일한 비밀번호(최초 이전)
+    // (3) v12 설정 자체가 없을 때, 지정된 1회 bootstrap UID의 최초 설정
+    await window.FB.set(window.FB.ref(window.FB.db, SESSION_ADMIN_CONFIG_PATH_()), payload);
+    sessionAdminConfigCache_ = { loaded:true, loading:false, exists:true, ownerUid:uid, passwordHash, updatedAt:now, error:'' };
+  }
+
   async function authenticateSessionResetAdmin_(typedPassword){
     try{ await window.FB.ensureAnonAuth(); }catch(e){}
-    if (!isSudaSessionAdmin_()){
-      showOverlay('💣 관리자 계정이 아니에요', '현재 브라우저는 수다방에 등록된 방장 Firebase 계정이 아니에요.\n\n수다방을 열었던 동일한 브라우저/프로필에서 다시 접속한 뒤 관리자 인증을 해주세요.');
-      refreshSessionResetAdminUi_();
-      return false;
-    }
-
-    await loadSessionAdminPasswordConfig_(true);
-    if (!sessionAdminPasswordConfigured_()){
-      showOverlayHtml('💣 비밀번호 설정 필요', `<div class="noticeBox"><div class="noticeText">세션 폭파 관리자 비밀번호가 아직 설정되지 않았어요.</div><div class="noticeActions"><button class="miniBtn" type="button" onclick="window.openSessionAdminPasswordSetup_()">🔑 비밀번호 설정</button></div></div>`);
-      return false;
-    }
-
     let pw = String(typedPassword || '');
-    if (!pw){ pw = prompt('🔒 세션 폭파 관리자 비밀번호를 입력해 주세요.') || ''; }
+    if (!pw){
+      pw = prompt('🔒 관리자 비밀번호를 입력해 주세요.\n\n현재 브라우저 ID가 바뀌었어도, 기존 비밀번호가 맞으면 이 브라우저가 새 방장으로 연결됩니다.\n처음 설정인 경우에는 앞으로 사용할 비밀번호를 입력해 주세요.') || '';
+    }
     if (!pw) return false;
 
     try{
       const h = await sha256Hex_(pw);
-      if (h === sessionAdminConfigCache_.passwordHash){
-        setSessionResetAdminUnlocked_();
-        showOverlay('✅ 관리자 인증 완료', '이 브라우저에서 30분 동안 공지 수정과 폭파 기능을 사용할 수 있어요.');
-        return true;
-      }
-    }catch(e){}
+      await loadSessionAdminPasswordConfig_(true);
 
-    alert('❌ 관리자 비밀번호가 맞지 않습니다.');
-    refreshSessionResetAdminUi_();
-    return false;
+      if (isSudaSessionAdmin_() && sessionAdminPasswordConfigured_()){
+        if (h !== sessionAdminConfigCache_.passwordHash){
+          alert('❌ 관리자 비밀번호가 맞지 않습니다.');
+          refreshSessionResetAdminUi_();
+          return false;
+        }
+      }else{
+        try{
+          await claimOrRecoverSessionAdmin_(h);
+        }catch(err){
+          console.warn('admin recovery failed', err);
+          alert('❌ 관리자 비밀번호가 맞지 않거나, 관리자 복구 권한이 아직 준비되지 않았어요.\n\n수다방 RTDB Rules v16을 Publish했는지 확인해 주세요.\n\n' + (err && err.message ? err.message : err));
+          refreshSessionResetAdminUi_();
+          return false;
+        }
+      }
+
+      setSessionResetAdminUnlocked_();
+      await loadMainGateControlConfig_(true);
+      showOverlay('✅ 관리자 인증 완료', '이 브라우저가 수다방 방장으로 연결되었습니다. 30분 동안 공지 수정과 폭파 기능을 사용할 수 있어요.');
+      return true;
+    }catch(e){
+      console.warn('admin authenticate failed', e);
+      alert('관리자 인증 중 오류가 발생했어요. 잠시 뒤 다시 시도해 주세요.');
+      refreshSessionResetAdminUi_();
+      return false;
+    }
   }
 
   async function ensureSessionResetAdmin_(typedPassword){
@@ -8742,14 +8790,12 @@ function computePresenceFromConn_(val){
     const arr = Array.from(new Uint8Array(buf));
     return arr.map(b => b.toString(16).padStart(2,'0')).join('');
   }
-  // ✅ 콘솔/다른 핸들러에서 쓰도록 전역 노출
   window.sha256Hex_ = sha256Hex_;
   window.makeNoticeHash = async function(pw){
     const h = await sha256Hex_(pw);
     console.log(h);
     return h;
   };
-
 
   function isNoticeAdmin_(){
     try{ return isSudaSessionAdmin_() && localStorage.getItem(NOTICE_ADMIN_SS_KEY_) === '1'; }catch(e){ return false; }
