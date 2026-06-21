@@ -1160,7 +1160,17 @@
       border-radius:14px;
       box-shadow:0 0 0 6px rgba(255,209,232,.24);
     }
-    .sudaUploadBridge{ display:none !important; }
+     .sudaUploadBridge{
+      position:fixed !important;
+      width:1px !important;
+      height:1px !important;
+      left:-20px !important;
+      top:-20px !important;
+      opacity:0 !important;
+      pointer-events:none !important;
+      border:0 !important;
+      overflow:hidden !important;
+    }
 
     .mine{ align-items:flex-end; }
     .mine .bubble{ background: #dffaf3; }
@@ -2776,9 +2786,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   };
 
   // =====================
-  // 🖼 사진 첨부 브리지 v6
+  // 🖼 사진 첨부 브리지 v7
   // - 사진 파일은 Drive에 저장하고 RTDB에는 URL만 기록합니다.
-  // - v5의 15초 타이머가 실제 Drive 업로드 도중에도 살아 있던 문제를 수정했습니다.
+  // - Apps Script HTML Service의 중첩 iframe 구조에서도 안정적으로 통신하도록 MessageChannel 브리지를 사용합니다.
   // - 일반 사진은 전송 전 1600px/압축본으로 가볍게 만들어 Apps Script 대기 시간을 줄입니다.
   // =====================
   const DRIVE_IMAGE_UPLOADER_URL = "https://script.google.com/macros/s/AKfycbwJP7DqhwnxMF-iNYCXNTFipAxhAn6pqDKQ_96eSBkTqxb3_S_dxOhr55BDVs_hNr2vbA/exec"; // 배포한 Apps Script 웹앱의 /exec 주소
@@ -2797,6 +2807,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   let driveUploadPayload_ = null;
   let driveUploadTimer_ = 0;
   let driveUploadTimerKind_ = "";
+  let driveUploadPort_ = null;
 
   function safeHttpUrl_(raw){
     try{
@@ -2993,6 +3004,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   }
   function getDriveUploadBridge_(){ return document.getElementById("sudaDriveUploadBridge"); }
   function disposeDriveUploadBridge_(){
+    if(driveUploadPort_){
+      try{ driveUploadPort_.onmessage = null; }catch(e){}
+      try{ driveUploadPort_.close(); }catch(e){}
+    }
+    driveUploadPort_ = null;
     const frame = getDriveUploadBridge_();
     if(frame) frame.remove();
   }
@@ -3144,28 +3160,58 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       showOverlay("사진 첨부", (err && err.message) || "사진을 준비하지 못했어요.");
     }
   }
-  function handleDriveUploaderMessage_(event){
+  function setDriveUploadPort_(port){
+    if(!port || typeof port.postMessage !== "function") return;
+    if(driveUploadPort_ && driveUploadPort_ !== port){
+      try{ driveUploadPort_.onmessage = null; }catch(e){}
+      try{ driveUploadPort_.close(); }catch(e){}
+    }
+    driveUploadPort_ = port;
     try{
-      const data = event && event.data;
+      driveUploadPort_.onmessage = (evt)=>{
+        try{ handleDriveUploaderPayload_(evt && evt.data); }catch(err){ console.warn("Drive image port failed", err); }
+      };
+      if(typeof driveUploadPort_.start === "function") driveUploadPort_.start();
+    }catch(e){}
+  }
+  function sendDriveUploadRequest_(frame, payload){
+    const request = {
+      source: "boom-suda-drive-parent",
+      action: "upload",
+      nonce: driveUploadNonce_,
+      payload
+    };
+    // Apps Script HTML Service는 실제 Uploader를 내부 sandbox iframe에 넣습니다.
+    // 전달받은 MessagePort가 있으면 그 포트로 직접 요청해, 중첩 iframe을 건너뜁니다.
+    if(driveUploadPort_){
+      driveUploadPort_.postMessage(request);
+      return;
+    }
+    // 구형/직접 iframe 환경을 위한 폴백.
+    try{
+      const inner = frame?.contentWindow?.frames?.[0];
+      if(inner && typeof inner.postMessage === "function"){
+        inner.postMessage(request, "*");
+        return;
+      }
+    }catch(e){}
+    try{ frame?.contentWindow?.postMessage(request, "*"); }catch(e){}
+  }
+  function handleDriveUploaderPayload_(data){
+    try{
       if(!data || data.source !== "boom-suda-drive-uploader") return;
       if(!driveUploadNonce_ || String(data.nonce || "") !== String(driveUploadNonce_)) return;
-      const frame = getDriveUploadBridge_();
-      if(frame && event.source && frame.contentWindow !== event.source) return;
 
       if(data.status === "ready"){
         if(!driveUploadBusy_ || driveUploadPhase_ !== "ready") return;
         const payload = driveUploadPayload_;
         if(!payload || !payload.dataUrl) throw new Error("사진 데이터를 준비하지 못했어요.");
+        const frame = getDriveUploadBridge_();
         clearDriveUploadTimer_();
         driveUploadPhase_ = "upload";
         armDriveUploadTimer_("upload");
         renderPendingDriveImage_();
-        frame?.contentWindow?.postMessage({
-          source: "boom-suda-drive-parent",
-          action: "upload",
-          nonce: driveUploadNonce_,
-          payload
-        }, "*");
+        sendDriveUploadRequest_(frame, payload);
         return;
       }
       if(data.status === "uploading"){
@@ -3175,8 +3221,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
         }
         return;
       }
-      if(data.status === "error") throw new Error(String(data.message || "파일을 올리지 못했어요."));
+      if(data.status === "error"){
+        if(!driveUploadBusy_) return;
+        throw new Error(String(data.message || "파일을 올리지 못했어요."));
+      }
       if(data.status === "cancel"){
+        if(!driveUploadBusy_) return;
         driveUploadBusy_ = false;
         driveUploadPhase_ = "";
         driveUploadPayload_ = null;
@@ -3185,7 +3235,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
         renderPendingDriveImage_();
         return;
       }
-      if(data.status !== "uploaded") return;
+      if(data.status !== "uploaded" || !driveUploadBusy_) return;
 
       const image = normalizeDriveImage_(data.image || {});
       if(!image) throw new Error("업로드된 이미지 정보를 받지 못했어요.");
@@ -3209,6 +3259,15 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       renderPendingDriveImage_();
       showOverlay("사진 첨부", (err && err.message) || "파일을 올리지 못했어요.");
     }
+  }
+  function handleDriveUploaderMessage_(event){
+    const data = event && event.data;
+    if(!data || data.source !== "boom-suda-drive-uploader") return;
+    if(!driveUploadNonce_ || String(data.nonce || "") !== String(driveUploadNonce_)) return;
+    // HtmlService 내부 sandbox iframe에서 온 메시지는 event.source가 바깥 iframe과 다를 수 있습니다.
+    // 랜덤 nonce + MessagePort로 검증하므로 창 객체 동일성 검사는 하지 않습니다.
+    if(event && event.ports && event.ports[0]) setDriveUploadPort_(event.ports[0]);
+    handleDriveUploaderPayload_(data);
   }
   function initDriveImageComposer_(){
     const input = document.getElementById("sudaImageFile");
