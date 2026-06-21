@@ -2786,28 +2786,23 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   };
 
   // =====================
-  // 🖼 사진 첨부 브리지 v7
-  // - 사진 파일은 Drive에 저장하고 RTDB에는 URL만 기록합니다.
-  // - Apps Script HTML Service의 중첩 iframe 구조에서도 안정적으로 통신하도록 MessageChannel 브리지를 사용합니다.
-  // - 일반 사진은 전송 전 1600px/압축본으로 가볍게 만들어 Apps Script 대기 시간을 줄입니다.
+  // 🖼 사진 첨부 · Firebase Storage 직결 v8
+  // - Apps Script iframe을 거치지 않고, 수다방에 이미 연결된 Firebase Storage로 바로 업로드합니다.
+  // - RTDB에는 이미지 URL과 파일 정보만 기록합니다.
+  // - 일반 사진은 전송 전에 최대 1600px로 가볍게 만들고, GIF는 움직임을 보존합니다.
   // =====================
-  const DRIVE_IMAGE_UPLOADER_URL = "https://script.google.com/macros/s/AKfycbwJP7DqhwnxMF-iNYCXNTFipAxhAn6pqDKQ_96eSBkTqxb3_S_dxOhr55BDVs_hNr2vbA/exec"; // 배포한 Apps Script 웹앱의 /exec 주소
-  const DRIVE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
-  const DRIVE_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
-  const DRIVE_IMAGE_READY_TIMEOUT_MS = 30000;
-  const DRIVE_IMAGE_UPLOAD_TIMEOUT_MS = 90000;
-  const DRIVE_IMAGE_MAX_DIMENSION = 1600;
-  const DRIVE_IMAGE_QUALITY = 0.82;
+  const CHAT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+  const CHAT_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
+  const CHAT_IMAGE_MAX_DIMENSION = 1600;
+  const CHAT_IMAGE_QUALITY = 0.82;
 
-  let pendingDriveImage_ = null;
+  let pendingDriveImage_ = null; // 기존 메시지 전송 흐름 호환용 이름
   let pendingLocalImage_ = null;
-  let driveUploadNonce_ = "";
   let driveUploadBusy_ = false;
   let driveUploadPhase_ = "";
-  let driveUploadPayload_ = null;
-  let driveUploadTimer_ = 0;
-  let driveUploadTimerKind_ = "";
-  let driveUploadPort_ = null;
+  let driveUploadProgress_ = 0;
+  let imageUploadTask_ = null;
+  let imageUploadCancelled_ = false;
 
   function safeHttpUrl_(raw){
     try{
@@ -2825,7 +2820,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       openUrl,
       name: String(src.name || "이미지").slice(0, 160),
       mimeType: String(src.mimeType || "image/*").slice(0, 80),
-      size: Math.max(0, Number(src.size || 0) || 0)
+      size: Math.max(0, Number(src.size || 0) || 0),
+      path: String(src.path || "").slice(0, 420)
     };
   }
   function appendLinkifiedText_(el, raw){
@@ -2868,8 +2864,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   function uploadStatusText_(){
     if(!driveUploadBusy_) return "";
     if(driveUploadPhase_ === "prepare") return "사진을 가볍게 준비 중…";
-    if(driveUploadPhase_ === "ready") return "파일 올리기 도구 연결 중…";
-    if(driveUploadPhase_ === "upload") return "파일 올리는 중…";
+    if(driveUploadPhase_ === "upload"){
+      const pct = Math.max(0, Math.min(100, Math.round(Number(driveUploadProgress_ || 0))));
+      return pct > 0 ? `파일 올리는 중… ${pct}%` : "파일 올리는 중…";
+    }
     return "파일 올리는 중…";
   }
   function renderPendingDriveImage_(){
@@ -2921,54 +2919,27 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     }
     confirm.textContent = driveUploadBusy_ ? (driveUploadPhase_ === "prepare" ? "준비 중…" : "올리는 중…") : "파일 올리기";
     confirm.disabled = !!driveUploadBusy_;
-    cancel.disabled = !!driveUploadBusy_;
-  }
-  function clearDriveUploadTimer_(){
-    if(driveUploadTimer_){
-      clearTimeout(driveUploadTimer_);
-      driveUploadTimer_ = 0;
-    }
-    driveUploadTimerKind_ = "";
-  }
-  function armDriveUploadTimer_(kind){
-    clearDriveUploadTimer_();
-    driveUploadTimerKind_ = String(kind || "");
-    const ms = driveUploadTimerKind_ === "ready" ? DRIVE_IMAGE_READY_TIMEOUT_MS : DRIVE_IMAGE_UPLOAD_TIMEOUT_MS;
-    driveUploadTimer_ = setTimeout(()=>{
-      if(!driveUploadBusy_ || driveUploadTimerKind_ !== kind) return;
-      const isReadyWait = kind === "ready";
-      driveUploadBusy_ = false;
-      driveUploadPhase_ = "";
-      driveUploadPayload_ = null;
-      disposeDriveUploadBridge_();
-      renderPendingDriveImage_();
-      showOverlay(
-        "사진 첨부",
-        isReadyWait
-          ? "사진 올리기 도구가 응답하지 않아요. Apps Script 웹앱을 새 버전으로 배포했는지 확인해 주세요."
-          : "파일 올리기가 오래 걸려 잠시 멈췄어요. 사진을 다시 골라 한 번 더 올려 주세요."
-      );
-    }, ms);
+    cancel.disabled = false;
   }
   function clearPendingDriveImage_(){
-    clearDriveUploadTimer_();
-    disposeDriveUploadBridge_();
+    imageUploadCancelled_ = true;
+    if(imageUploadTask_ && driveUploadBusy_){
+      try{ imageUploadTask_.cancel(); }catch(e){}
+    }
+    imageUploadTask_ = null;
     resetPendingPreview_();
     pendingLocalImage_ = null;
     pendingDriveImage_ = null;
-    driveUploadPayload_ = null;
     driveUploadBusy_ = false;
     driveUploadPhase_ = "";
+    driveUploadProgress_ = 0;
     renderPendingDriveImage_();
-  }
-  function makeDriveUploadNonce_(){
-    try{ return crypto.randomUUID(); }catch(e){ return `drive_${Date.now()}_${Math.random().toString(36).slice(2)}`; }
   }
   function validateLocalImageFile_(file){
     if(!file) return "사진 파일을 골라 주세요.";
-    const allowed = new Set(DRIVE_IMAGE_ACCEPT.split(","));
+    const allowed = new Set(CHAT_IMAGE_ACCEPT.split(","));
     if(!allowed.has(String(file.type || "").toLowerCase())) return "JPG, PNG, WEBP, GIF 형식만 올릴 수 있어요.";
-    if(Number(file.size || 0) > DRIVE_IMAGE_MAX_BYTES) return "이미지는 5MB 이하로 올려 주세요.";
+    if(Number(file.size || 0) > CHAT_IMAGE_MAX_BYTES) return "이미지는 5MB 이하로 올려 주세요.";
     return "";
   }
   function selectLocalDriveImage_(file){
@@ -2977,8 +2948,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       showOverlay("사진 첨부", error);
       return;
     }
-    clearDriveUploadTimer_();
-    disposeDriveUploadBridge_();
+    imageUploadCancelled_ = false;
+    if(imageUploadTask_ && driveUploadBusy_){
+      try{ imageUploadTask_.cancel(); }catch(e){}
+    }
+    imageUploadTask_ = null;
     resetPendingPreview_();
     pendingDriveImage_ = null;
     pendingLocalImage_ = {
@@ -2986,9 +2960,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       previewUrl: URL.createObjectURL(file),
       prepared: null
     };
-    driveUploadPayload_ = null;
     driveUploadBusy_ = false;
     driveUploadPhase_ = "";
+    driveUploadProgress_ = 0;
     renderPendingDriveImage_();
   }
   function chooseDriveImageFile_(){
@@ -3001,51 +2975,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     if(!input) return;
     input.value = "";
     input.click();
-  }
-  function getDriveUploadBridge_(){ return document.getElementById("sudaDriveUploadBridge"); }
-  function disposeDriveUploadBridge_(){
-    if(driveUploadPort_){
-      try{ driveUploadPort_.onmessage = null; }catch(e){}
-      try{ driveUploadPort_.close(); }catch(e){}
-    }
-    driveUploadPort_ = null;
-    const frame = getDriveUploadBridge_();
-    if(frame) frame.remove();
-  }
-  function makeDriveUploadBridge_(){
-    if(!DRIVE_IMAGE_UPLOADER_URL) throw new Error("사진 업로드 설정이 아직 연결되지 않았어요.");
-    disposeDriveUploadBridge_();
-    driveUploadNonce_ = makeDriveUploadNonce_();
-    let src = "";
-    try{
-      const u = new URL(DRIVE_IMAGE_UPLOADER_URL);
-      u.searchParams.set("parentOrigin", location.origin || "");
-      u.searchParams.set("nonce", driveUploadNonce_);
-      u.searchParams.set("room", String(sessionId || ""));
-      u.searchParams.set("nick", String(myName() || "익명").slice(0, 12));
-      u.searchParams.set("maxBytes", String(DRIVE_IMAGE_MAX_BYTES));
-      u.searchParams.set("bridge", "1");
-      src = u.toString();
-    }catch(e){
-      throw new Error("사진 업로드 주소 형식이 올바르지 않아요.");
-    }
-    const frame = document.createElement("iframe");
-    frame.id = "sudaDriveUploadBridge";
-    frame.className = "sudaUploadBridge";
-    frame.title = "사진 업로드 처리";
-    frame.src = src;
-    frame.setAttribute("aria-hidden", "true");
-    frame.referrerPolicy = "strict-origin-when-cross-origin";
-    document.body.appendChild(frame);
-    return frame;
-  }
-  function readFileAsDataUrl_(file){
-    return new Promise((resolve, reject)=>{
-      const reader = new FileReader();
-      reader.onerror = ()=>reject(new Error("파일을 읽지 못했어요. 다시 골라 주세요."));
-      reader.onload = ()=>resolve(String(reader.result || ""));
-      reader.readAsDataURL(file);
-    });
   }
   function loadImageForUpload_(file){
     return new Promise((resolve, reject)=>{
@@ -3072,50 +3001,72 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     const ext = mimeType === "image/webp" ? ".webp" : ".jpg";
     return `${source.slice(0, 110)}${ext}`;
   }
+  function safeStorageFileName_(name){
+    return String(name || "image")
+      .replace(/[^\w.\-가-힣]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 120) || "image";
+  }
   async function prepareImageForUpload_(file){
     const rawType = String(file.type || "").toLowerCase();
     const original = { file, mimeType: rawType, size: Number(file.size || 0), optimized: false };
     if(rawType === "image/gif"){
-      return Object.assign(original, { dataUrl: await readFileAsDataUrl_(file), note: "GIF는 움직임을 살려 원본으로 올려요." });
+      return Object.assign(original, { note: "GIF는 움직임을 살려 원본으로 올려요." });
     }
-    if(!/^image\/(jpeg|png|webp)$/.test(rawType)){
-      return Object.assign(original, { dataUrl: await readFileAsDataUrl_(file) });
-    }
+    if(!/^image\/(jpeg|png|webp)$/.test(rawType)) return original;
+
     let img = null;
-    try{ img = await loadImageForUpload_(file); }catch(e){ return Object.assign(original, { dataUrl: await readFileAsDataUrl_(file) }); }
+    try{ img = await loadImageForUpload_(file); }catch(e){ return original; }
     const width = Math.max(1, Number(img.naturalWidth || img.width || 1));
     const height = Math.max(1, Number(img.naturalHeight || img.height || 1));
-    const scale = Math.min(1, DRIVE_IMAGE_MAX_DIMENSION / Math.max(width, height));
+    const scale = Math.min(1, CHAT_IMAGE_MAX_DIMENSION / Math.max(width, height));
     const targetW = Math.max(1, Math.round(width * scale));
     const targetH = Math.max(1, Math.round(height * scale));
-    if(scale === 1 && Number(file.size || 0) <= 900 * 1024){
-      return Object.assign(original, { dataUrl: await readFileAsDataUrl_(file) });
-    }
+    if(scale === 1 && Number(file.size || 0) <= 900 * 1024) return original;
+
     const canvas = document.createElement("canvas");
     canvas.width = targetW;
     canvas.height = targetH;
     const ctx = canvas.getContext("2d", { alpha: rawType !== "image/jpeg" });
-    if(!ctx) return Object.assign(original, { dataUrl: await readFileAsDataUrl_(file) });
+    if(!ctx) return original;
     if(rawType === "image/jpeg"){
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, targetW, targetH);
     }
     ctx.drawImage(img, 0, 0, targetW, targetH);
     const outType = rawType === "image/jpeg" ? "image/jpeg" : "image/webp";
-    const blob = await canvasToBlob_(canvas, outType, DRIVE_IMAGE_QUALITY);
-    if(!blob || !blob.size || blob.size >= file.size){
-      return Object.assign(original, { dataUrl: await readFileAsDataUrl_(file) });
-    }
-    const optimizedFile = new File([blob], uploadFileName_(file, outType), { type: outType, lastModified: Date.now() });
+    const blob = await canvasToBlob_(canvas, outType, CHAT_IMAGE_QUALITY);
+    if(!blob || !blob.size || blob.size >= file.size) return original;
+
+    const optimizedFile = new File([blob], uploadFileName_(file, outType), {
+      type: outType,
+      lastModified: Date.now()
+    });
     return {
       file: optimizedFile,
       mimeType: outType,
       size: optimizedFile.size,
-      dataUrl: await readFileAsDataUrl_(optimizedFile),
       optimized: true,
       originalSize: Number(file.size || 0),
       note: `${targetW}×${targetH}`
     };
+  }
+  function explainStorageUploadError_(err){
+    const code = String(err?.code || "");
+    if(code === "storage/unauthorized"){
+      return "사진 저장 권한이 없어요. Firebase Storage Rules에 chat-images 경로 권한을 추가해 주세요.";
+    }
+    if(code === "storage/canceled") return "파일 올리기를 취소했어요.";
+    if(code === "storage/quota-exceeded"){
+      return "Firebase Storage 용량 또는 전송 한도를 확인해 주세요.";
+    }
+    if(code === "storage/retry-limit-exceeded"){
+      return "네트워크가 불안정해 업로드를 마치지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+    }
+    if(code === "storage/unauthenticated"){
+      return "수다방 로그인이 아직 준비되지 않았어요. 잠시 뒤 다시 시도해 주세요.";
+    }
+    return String(err?.message || "파일을 올리지 못했어요. 네트워크를 확인해 주세요.");
   }
   async function uploadPendingDriveImage_(){
     if(pendingDriveImage_){
@@ -3128,146 +3079,86 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     if(error){ showOverlay("사진 첨부", error); return; }
     if(driveUploadBusy_) return;
 
+    imageUploadCancelled_ = false;
     try{
       driveUploadBusy_ = true;
       driveUploadPhase_ = "prepare";
+      driveUploadProgress_ = 0;
       renderPendingDriveImage_();
-      const prepared = local.prepared && local.prepared.dataUrl ? local.prepared : await prepareImageForUpload_(local.file);
-      if(pendingLocalImage_ !== local) return;
+
+      const prepared = local.prepared || await prepareImageForUpload_(local.file);
+      if(pendingLocalImage_ !== local || imageUploadCancelled_) return;
       const preparedError = validateLocalImageFile_(prepared.file);
       if(preparedError) throw new Error(preparedError);
       local.prepared = prepared;
-      driveUploadPayload_ = {
-        dataUrl: String(prepared.dataUrl || ""),
-        filename: String(prepared.file?.name || local.file.name || "image"),
-        mimeType: String(prepared.mimeType || prepared.file?.type || local.file.type || ""),
-        size: Number(prepared.size || prepared.file?.size || 0),
-        room: String(sessionId || ""),
-        nick: String(myName() || "익명").slice(0, 12)
-      };
-      if(!driveUploadPayload_.dataUrl) throw new Error("사진 데이터를 준비하지 못했어요.");
-      driveUploadPhase_ = "ready";
-      renderPendingDriveImage_();
-      makeDriveUploadBridge_();
-      armDriveUploadTimer_("ready");
-    }catch(err){
-      driveUploadBusy_ = false;
-      driveUploadPhase_ = "";
-      driveUploadPayload_ = null;
-      clearDriveUploadTimer_();
-      disposeDriveUploadBridge_();
-      renderPendingDriveImage_();
-      showOverlay("사진 첨부", (err && err.message) || "사진을 준비하지 못했어요.");
-    }
-  }
-  function setDriveUploadPort_(port){
-    if(!port || typeof port.postMessage !== "function") return;
-    if(driveUploadPort_ && driveUploadPort_ !== port){
-      try{ driveUploadPort_.onmessage = null; }catch(e){}
-      try{ driveUploadPort_.close(); }catch(e){}
-    }
-    driveUploadPort_ = port;
-    try{
-      driveUploadPort_.onmessage = (evt)=>{
-        try{ handleDriveUploaderPayload_(evt && evt.data); }catch(err){ console.warn("Drive image port failed", err); }
-      };
-      if(typeof driveUploadPort_.start === "function") driveUploadPort_.start();
-    }catch(e){}
-  }
-  function sendDriveUploadRequest_(frame, payload){
-    const request = {
-      source: "boom-suda-drive-parent",
-      action: "upload",
-      nonce: driveUploadNonce_,
-      payload
-    };
-    // Apps Script HTML Service는 실제 Uploader를 내부 sandbox iframe에 넣습니다.
-    // 전달받은 MessagePort가 있으면 그 포트로 직접 요청해, 중첩 iframe을 건너뜁니다.
-    if(driveUploadPort_){
-      driveUploadPort_.postMessage(request);
-      return;
-    }
-    // 구형/직접 iframe 환경을 위한 폴백.
-    try{
-      const inner = frame?.contentWindow?.frames?.[0];
-      if(inner && typeof inner.postMessage === "function"){
-        inner.postMessage(request, "*");
-        return;
-      }
-    }catch(e){}
-    try{ frame?.contentWindow?.postMessage(request, "*"); }catch(e){}
-  }
-  function handleDriveUploaderPayload_(data){
-    try{
-      if(!data || data.source !== "boom-suda-drive-uploader") return;
-      if(!driveUploadNonce_ || String(data.nonce || "") !== String(driveUploadNonce_)) return;
 
-      if(data.status === "ready"){
-        if(!driveUploadBusy_ || driveUploadPhase_ !== "ready") return;
-        const payload = driveUploadPayload_;
-        if(!payload || !payload.dataUrl) throw new Error("사진 데이터를 준비하지 못했어요.");
-        const frame = getDriveUploadBridge_();
-        clearDriveUploadTimer_();
-        driveUploadPhase_ = "upload";
-        armDriveUploadTimer_("upload");
-        renderPendingDriveImage_();
-        sendDriveUploadRequest_(frame, payload);
-        return;
-      }
-      if(data.status === "uploading"){
-        if(driveUploadBusy_){
-          driveUploadPhase_ = "upload";
-          renderPendingDriveImage_();
+      await window.FB.ensureAnonAuth();
+      if(imageUploadCancelled_) return;
+      const uid = String(window.FB.auth?.currentUser?.uid || myUid_() || "").trim();
+      if(!uid) throw new Error("수다방 로그인을 확인하지 못했어요.");
+
+      const file = prepared.file;
+      const fileName = safeStorageFileName_(file.name || local.file.name || "image");
+      const path = `rooms/${String(sessionId || "unknown")}/chat-images/${uid}/${Date.now()}_${fileName}`;
+      const storageRef = window.FB.sRef(window.FB.storage, path);
+      const metadata = {
+        contentType: String(prepared.mimeType || file.type || local.file.type || "image/jpeg"),
+        customMetadata: {
+          room: String(sessionId || "").slice(0, 120),
+          nick: String(myName() || "익명").slice(0, 24)
         }
-        return;
-      }
-      if(data.status === "error"){
-        if(!driveUploadBusy_) return;
-        throw new Error(String(data.message || "파일을 올리지 못했어요."));
-      }
-      if(data.status === "cancel"){
-        if(!driveUploadBusy_) return;
-        driveUploadBusy_ = false;
-        driveUploadPhase_ = "";
-        driveUploadPayload_ = null;
-        clearDriveUploadTimer_();
-        disposeDriveUploadBridge_();
-        renderPendingDriveImage_();
-        return;
-      }
-      if(data.status !== "uploaded" || !driveUploadBusy_) return;
+      };
 
-      const image = normalizeDriveImage_(data.image || {});
-      if(!image) throw new Error("업로드된 이미지 정보를 받지 못했어요.");
+      driveUploadPhase_ = "upload";
+      renderPendingDriveImage_();
+
+      const result = await new Promise((resolve, reject)=>{
+        const task = window.FB.uploadBytesResumable(storageRef, file, metadata);
+        imageUploadTask_ = task;
+        task.on("state_changed",
+          (snap)=>{
+            if(!driveUploadBusy_) return;
+            driveUploadProgress_ = snap.totalBytes
+              ? Math.round((snap.bytesTransferred / snap.totalBytes) * 100)
+              : 0;
+            renderPendingDriveImage_();
+          },
+          (taskError)=>reject(taskError),
+          async ()=>{
+            try{
+              const url = await window.FB.getDownloadURL(task.snapshot.ref);
+              resolve({ url, path });
+            }catch(doneError){ reject(doneError); }
+          }
+        );
+      });
+
+      if(imageUploadCancelled_ || pendingLocalImage_ !== local) return;
       resetPendingPreview_();
       pendingLocalImage_ = null;
-      pendingDriveImage_ = image;
-      driveUploadPayload_ = null;
+      pendingDriveImage_ = {
+        url: result.url,
+        openUrl: result.url,
+        name: file.name || "이미지",
+        mimeType: metadata.contentType,
+        size: Number(file.size || 0),
+        path: result.path
+      };
       driveUploadBusy_ = false;
       driveUploadPhase_ = "";
-      clearDriveUploadTimer_();
-      disposeDriveUploadBridge_();
+      driveUploadProgress_ = 100;
+      imageUploadTask_ = null;
       renderPendingDriveImage_();
       try{ document.getElementById("msg")?.focus(); }catch(_e){}
     }catch(err){
-      console.warn("Drive image bridge failed", err);
+      const cancelled = imageUploadCancelled_ || String(err?.code || "") === "storage/canceled";
+      imageUploadTask_ = null;
       driveUploadBusy_ = false;
       driveUploadPhase_ = "";
-      driveUploadPayload_ = null;
-      clearDriveUploadTimer_();
-      disposeDriveUploadBridge_();
+      driveUploadProgress_ = 0;
       renderPendingDriveImage_();
-      showOverlay("사진 첨부", (err && err.message) || "파일을 올리지 못했어요.");
+      if(!cancelled) showOverlay("사진 첨부", explainStorageUploadError_(err));
     }
-  }
-  function handleDriveUploaderMessage_(event){
-    const data = event && event.data;
-    if(!data || data.source !== "boom-suda-drive-uploader") return;
-    if(!driveUploadNonce_ || String(data.nonce || "") !== String(driveUploadNonce_)) return;
-    // HtmlService 내부 sandbox iframe에서 온 메시지는 event.source가 바깥 iframe과 다를 수 있습니다.
-    // 랜덤 nonce + MessagePort로 검증하므로 창 객체 동일성 검사는 하지 않습니다.
-    if(event && event.ports && event.ports[0]) setDriveUploadPort_(event.ports[0]);
-    handleDriveUploaderPayload_(data);
   }
   function initDriveImageComposer_(){
     const input = document.getElementById("sudaImageFile");
@@ -3303,7 +3194,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     renderPendingDriveImage_();
   }
   function openDriveImageUploader_(){ chooseDriveImageFile_(); }
-  window.addEventListener("message", handleDriveUploaderMessage_);
 
 // ---- script 2 (plain) ----
 // 유튜브 플레이어는 iframe_api 로딩 후 생성
