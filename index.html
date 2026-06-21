@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>💣Boom!</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY -->
+  <title>💣Boom!</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY | SESSION_RESET_LOCK_V10 -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
   <style>
     :root{
@@ -1153,6 +1153,8 @@
       background:rgba(255,255,255,.86);
       color:#68244d;
     }
+    /* v9: 사진은 선택/드롭 즉시 자동 업로드. 별도 파일 올리기 버튼은 숨김 */
+    .imagePendingBar #btnImageConfirm{ display:none !important; }
     .imageDropZone{ transition:box-shadow .14s ease, outline-color .14s ease; }
     .imageDropZone.dragOver{
       outline:2px dashed rgba(188,75,134,.62);
@@ -2396,6 +2398,8 @@ body{
       user-select:none;
       pointer-events:none;
       white-space:nowrap;
+      will-change: transform;
+      contain: layout paint style;
     }
     .acidWord.miss{ opacity:.35; filter: blur(.3px); }
 
@@ -2637,12 +2641,12 @@ body{
           <span id="imagePendingSub" class="imagePendingSub"></span>
         </div>
         <div class="imagePendingActions">
-          <button id="btnImageConfirm" class="primaryAttach" type="button">파일 올리기</button>
-          <button id="btnImageCancel" type="button">취소</button>
+          <button id="btnImageConfirm" class="primaryAttach" type="button" aria-hidden="true" tabindex="-1">파일 올리기</button>
+          <button id="btnImageCancel" type="button">첨부 취소</button>
         </div>
       </div>
       <div class="sendRow imageDropZone" id="imageDropZone">
-        <textarea id="msg" rows="2" placeholder="메시지 입력 (Enter=전송 / Shift+Enter=줄바꿈 / 사진을 끌어 놓아 첨부)"></textarea>
+        <textarea id="msg" rows="2" placeholder="메시지 입력 (Enter=전송 / Shift+Enter=줄바꿈 / 사진을 끌어 놓으면 자동 업로드)"></textarea>
         <button id="sendBtn" type="button">전송</button>
       </div>
 
@@ -2749,6 +2753,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   window.FB_ref = (path) => ref(db, path);
   const storage = getStorage(app);
 
+
+  // =====================
+  // 💣 수다방 세션(폭파) 관리자 잠금 v10
+  // - 실제 권한은 RTDB Rules의 UID 제한으로 확정됩니다.
+  // - 아래 UID는 현재 수다방 방장 Firebase UID와 같아야 합니다.
+  const SUDA_SESSION_ADMIN_UID_ = 'carcV95666TnsWK072Jnmas9lMk1';
+
+  function sudaSessionAdminUid_(){
+    try{ return String(auth.currentUser?.uid || ''); }catch(e){ return ''; }
+  }
+  function isSudaSessionAdmin_(){
+    return sudaSessionAdminUid_() === SUDA_SESSION_ADMIN_UID_;
+  }
+
   async function ensureAnonAuth(){
     // 기다렸다가(복원 포함) 없으면 익명 로그인
     try{
@@ -2793,8 +2811,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   // =====================
   const CHAT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
   const CHAT_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
-  const CHAT_IMAGE_MAX_DIMENSION = 1600;
-  const CHAT_IMAGE_QUALITY = 0.82;
+  const CHAT_IMAGE_MAX_DIMENSION = 1440;
+  const CHAT_IMAGE_QUALITY = 0.78;
 
   let pendingDriveImage_ = null; // 기존 메시지 전송 흐름 호환용 이름
   let pendingLocalImage_ = null;
@@ -2803,6 +2821,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   let driveUploadProgress_ = 0;
   let imageUploadTask_ = null;
   let imageUploadCancelled_ = false;
+  // v9: 사진을 고른 뒤 Enter를 먼저 눌러도 업로드가 끝나는 즉시 자동 전송합니다.
+  let imageSendAfterUpload_ = false;
 
   function safeHttpUrl_(raw){
     try{
@@ -2889,13 +2909,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     }
 
     bar.classList.add("show");
-    confirm.style.display = "";
-    confirm.disabled = false;
+    // v9: 업로드는 자동으로 시작하므로 수동 "파일 올리기" 버튼은 보여주지 않아요.
+    confirm.style.display = "none";
+    confirm.disabled = true;
     cancel.disabled = false;
 
     if(uploaded){
       text.textContent = `🖼 ${uploaded.name || "사진"} 첨부됨`;
-      sub.textContent = "전송을 누르면 채팅에 올라가요.";
+      sub.textContent = "Enter를 누르면 채팅에 바로 올라가요.";
       if(uploaded.url){
         thumb.src = uploaded.url;
         thumb.classList.add("show");
@@ -2911,17 +2932,18 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     }else if(local.prepared && Number(local.prepared.size || 0) < Number(file.size || 0)){
       sub.textContent = `${humanImageSize_(file.size)} → ${humanImageSize_(local.prepared.size)}로 가볍게 준비됨`;
     }else{
-      sub.textContent = `${humanImageSize_(file.size)} · 파일 올리기를 눌러 첨부`;
+      sub.textContent = `${humanImageSize_(file.size)} · 자동으로 올리는 중이에요. Enter를 누르면 완료 즉시 전송해요.`;
     }
     if(local.previewUrl){
       thumb.src = local.previewUrl;
       thumb.classList.add("show");
     }
-    confirm.textContent = driveUploadBusy_ ? (driveUploadPhase_ === "prepare" ? "준비 중…" : "올리는 중…") : "파일 올리기";
-    confirm.disabled = !!driveUploadBusy_;
+    confirm.textContent = "자동 업로드";
+    confirm.disabled = true;
     cancel.disabled = false;
   }
   function clearPendingDriveImage_(){
+    imageSendAfterUpload_ = false;
     imageUploadCancelled_ = true;
     if(imageUploadTask_ && driveUploadBusy_){
       try{ imageUploadTask_.cancel(); }catch(e){}
@@ -2949,6 +2971,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       return;
     }
     imageUploadCancelled_ = false;
+    imageSendAfterUpload_ = false;
     if(imageUploadTask_ && driveUploadBusy_){
       try{ imageUploadTask_.cancel(); }catch(e){}
     }
@@ -2964,6 +2987,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     driveUploadPhase_ = "";
     driveUploadProgress_ = 0;
     renderPendingDriveImage_();
+    // v9: 파일 선택/드롭 즉시 업로드 시작. Enter는 "업로드 완료 후 전송" 예약 역할만 합니다.
+    window.setTimeout(()=>{
+      try{
+        if(pendingLocalImage_ && !pendingDriveImage_ && !driveUploadBusy_) uploadPendingDriveImage_();
+      }catch(e){}
+    }, 0);
   }
   function chooseDriveImageFile_(){
     if(!sessionId){
@@ -3022,7 +3051,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     const scale = Math.min(1, CHAT_IMAGE_MAX_DIMENSION / Math.max(width, height));
     const targetW = Math.max(1, Math.round(width * scale));
     const targetH = Math.max(1, Math.round(height * scale));
-    if(scale === 1 && Number(file.size || 0) <= 900 * 1024) return original;
+    // 작은 사진은 다시 그리지 않고 바로 올려 준비 시간을 줄입니다.
+    if(scale === 1 && Number(file.size || 0) <= 1500 * 1024) return original;
 
     const canvas = document.createElement("canvas");
     canvas.width = targetW;
@@ -3134,6 +3164,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       });
 
       if(imageUploadCancelled_ || pendingLocalImage_ !== local) return;
+      const shouldSendNow = !!imageSendAfterUpload_;
       resetPendingPreview_();
       pendingLocalImage_ = null;
       pendingDriveImage_ = {
@@ -3150,9 +3181,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       imageUploadTask_ = null;
       renderPendingDriveImage_();
       try{ document.getElementById("msg")?.focus(); }catch(_e){}
+      if(shouldSendNow){
+        imageSendAfterUpload_ = false;
+        window.setTimeout(()=>{ try{ sendChat_(); }catch(e){} }, 0);
+      }
     }catch(err){
       const cancelled = imageUploadCancelled_ || String(err?.code || "") === "storage/canceled";
       imageUploadTask_ = null;
+      imageSendAfterUpload_ = false;
       driveUploadBusy_ = false;
       driveUploadPhase_ = "";
       driveUploadProgress_ = 0;
@@ -3746,24 +3782,47 @@ function escapeHtml(s){
     const rnd = Math.random().toString(16).slice(2,10);
     return `suda_${dk}_${rnd}`;
   }
+  let waitingForSessionHost_ = false;
+
   async function getOrCreateSession_(){
     await window.FB.ensureAnonAuth();
     const hubRef = window.FB.ref(window.FB.db, SUDA_HUB_PATH_());
     const dk = dayKeySeoul_();
+
+    // 일반 참여자는 세션을 읽기만 합니다.
+    // 세션 생성·교체는 RTDB Rules와 동일하게 방장 UID만 할 수 있습니다.
+    const snap = await window.FB.get(hubRef);
+    const current = snap.exists() ? (snap.val() || {}) : {};
+    if (current.dayKey === dk && current.sessionId){
+      return {
+        sessionId: String(current.sessionId),
+        createdAt: Number(current.createdAt || 0),
+        dayKey: current.dayKey || dk
+      };
+    }
+
+    // 오늘 세션이 아직 없거나 날짜가 바뀐 경우에는 방장만 새 세션을 만듭니다.
+    if (!isSudaSessionAdmin_()){
+      const err = new Error('HOST_SESSION_REQUIRED');
+      err.code = 'HOST_SESSION_REQUIRED';
+      throw err;
+    }
+
     const res = await window.FB.runTransaction(hubRef, (cur)=>{
       cur = cur || {};
       if (cur.dayKey !== dk || !cur.sessionId){
-        cur = { dayKey: dk, sessionId: makeSessionId_(), createdAt: Date.now() };
+        cur = { dayKey: dk, sessionId: makeSessionId_(), createdAt: Date.now(), openedBy: sudaSessionAdminUid_() };
       }
-      // ping stamp
-      cur.lastPingAt = Date.now();
       return cur;
     });
     const v = res && res.snapshot ? (res.snapshot.val()||{}) : {};
-    return { sessionId: v.sessionId, createdAt: Number(v.createdAt||0), dayKey: v.dayKey||dk };
+    return { sessionId: String(v.sessionId || ''), createdAt: Number(v.createdAt||0), dayKey: v.dayKey||dk };
   }
+
   async function forceResetSession_(reason){
     await window.FB.ensureAnonAuth();
+    if (!isSudaSessionAdmin_()) throw new Error('관리자 수다방 계정에서만 폭파할 수 있어요.');
+
     const hubRef = window.FB.ref(window.FB.db, SUDA_HUB_PATH_());
     const dk = dayKeySeoul_();
     await window.FB.runTransaction(hubRef, (cur)=>{
@@ -3771,6 +3830,7 @@ function escapeHtml(s){
       cur.dayKey = dk;
       cur.sessionId = makeSessionId_();
       cur.createdAt = Date.now();
+      cur.openedBy = sudaSessionAdminUid_();
       cur.resetReason = String(reason||'manual');
       cur.resetAt = Date.now();
       return cur;
@@ -3940,6 +4000,10 @@ if(!expAtMs || expAtMs < now){
       if (!sessionId && newId){
         sessionId = newId;
         createdAt = Number(info.createdAt || 0);
+        if (waitingForSessionHost_){
+          waitingForSessionHost_ = false;
+          try{ hideOverlay(); }catch(e){}
+        }
         $('sessLabel').textContent = `SESSION: ${sessionId}`;
         await initFirebase_(sessionId);
       } else if (sessionId && newId && newId !== sessionId){
@@ -3951,6 +4015,12 @@ if(!expAtMs || expAtMs < now){
       }
       schedulePing(6000);
     }catch(e){
+      if (e && e.code === 'HOST_SESSION_REQUIRED' && !waitingForSessionHost_){
+        waitingForSessionHost_ = true;
+        try{
+          showOverlay('💣 수다방 준비 중', '오늘 수다방 세션을 방장이 여는 중이에요.\n잠시만 기다려 주세요!');
+        }catch(err){}
+      }
       schedulePing(6000);
     }
   }
@@ -4039,7 +4109,10 @@ initChat_(roomId);
     const text = (msgEl.value || '').trim();
     const attachedImage = normalizeDriveImage_(pendingDriveImage_);
     if(pendingLocalImage_ && !attachedImage){
-      showOverlay('사진 첨부', driveUploadBusy_ ? '사진을 올리는 중이에요. 잠시만 기다려 주세요.' : '사진을 보내려면 먼저 파일 올리기를 눌러 주세요.');
+      // v9: 사진 선택 뒤 Enter를 먼저 눌러도 업로드 완료 직후 자동으로 보냅니다.
+      imageSendAfterUpload_ = true;
+      if(!driveUploadBusy_) uploadPendingDriveImage_();
+      try{ showToast('사진 업로드가 끝나면 자동으로 전송할게요.', 1600); }catch(e){}
       return;
     }
     if (!text && !attachedImage) return;
@@ -4081,28 +4154,30 @@ async function runFx2_(kind, sysMsg){
   // NOTE: 로컬에서 바로 launch하지 않음(이벤트 수신으로 1회만 실행)
 }
 
-// --- force reset (PIN) ---
-// ✅ 채팅에 "비밀번호"가 노출되지 않게, Firebase로는 보내지 않고 서버에만 전달
+// --- force reset (관리자 UID + 비밀번호 이중 확인) ---
+// ✅ 비밀번호는 Firebase/채팅에 저장하지 않고, 로컬에서 해시 비교만 합니다.
 if (cmd === '/폭파' || cmd === '/초기화' || cmd === '/리셋' || cmd === '/reset'){
   msgEl.value = '';
-  const pin = String(parts[1] || '').trim();
-  if (!pin){
-    showOverlay('💣 세션 초기화', '비밀번호(아무 값) 입력이 필요해요. 예) /폭파 1234');
-    return;
-  }
 
-  const ok = window.confirm('💣 정말로 세션을 강제로 폭파(초기화)할까요?\n(모두가 새 세션으로 이동합니다)');
+  // 명령어 뒤에 비밀번호를 쓰지 않아도 됩니다. /폭파만 입력하면 안전한 입력창이 뜹니다.
+  const suppliedPassword = String(parts.slice(1).join(' ') || '').trim();
+  const authorized = await ensureSessionResetAdmin_(suppliedPassword);
+  if (!authorized) return;
+
+  const ok = window.confirm('💣 정말로 세션을 강제로 폭파(초기화)할까요?\n\n모두가 새 세션으로 이동하며, 현재 대화는 사라집니다.');
   if (!ok) return;
 
   try{
     stopAll_();
-    showOverlay('💣 초기화 중...', '새 세션을 여는 중이에요. 새로고침 한 번!');
+    showOverlay('💣 초기화 중...', '새 세션을 여는 중이에요. 잠시만 기다려 주세요!');
   }catch(e){}
 
   try{
-    await forceResetSession_('chat_command');
+    await forceResetSession_('admin_chat_command');
   }catch(e){
     alert('초기화 실패: ' + (e && e.message ? e.message : e));
+    try{ location.reload(); }catch(err){}
+    return;
   }
   try{ location.reload(); }catch(e){}
   return;
@@ -4135,8 +4210,8 @@ if (cmd === '/명령어' || cmd === '/도움말'){
     `🧭 ${nm}님, 사용 가능한 명령어 안내드립니다.\n` +
     `• /완결 : 완결 폭죽\n` +
     `• /축하 : 축하 폭죽\n` +
-    `• /폭파 [비밀번호] : 세션 강제 초기화(관리자)\n` +
-    `• /초기화 [비밀번호] : (/폭파와 동일)\n` +
+    `• /폭파 : 관리자 비밀번호 확인 후 세션 강제 초기화\n` +
+    `• /초기화 : (/폭파와 동일)\n` +
     `• /하트 : 하트 뿌리기\n` +
     `• /반짝 : 반짝반짝 이펙트\n` +
     `• /눈꽃 : 눈꽃 내리기\n` +
@@ -6038,27 +6113,76 @@ let acidPlayers_ = {};
 let acidCurUnsub_ = null;
 let acidPlayersUnsub_ = null;
 
-let acidUi_ = { open:false, raf: null, lastNow:0, schedule: [], active: new Map(), misses:0, hits:0 };
+let acidUi_ = { open:false, raf: null, lastNow:0, schedule: [], active: new Map(), misses:0, hits:0, lastHudAt:0, lastStageMeasureAt:0, stageH:0 };
 const ACID_LIMIT_MS_ = 120000;
 const ACID_SPAWN_MS_ = 900;
 const ACID_FALL_MS_  = 13000;
-const ACID_MAX_ACTIVE_ = 15;
+const ACID_MAX_ACTIVE_ = 10;
 const ACID_FALL_MIN_MS_ = 5200;
 const ACID_FALL_MAX_MS_ = 9000;
 const ACID_EVENT_PROB_ = 0.12; // 확률
 const ACID_EVENT_POINTS_ = 3;
 const ACID_EVENT_FALL_MIN_MS_ = 2600;
 const ACID_EVENT_FALL_MAX_MS_ = 4200;
-const ACID_POOL_ = [
-  '사랑','고백','후회','구원','침묵','불꽃','그림자','빛','달','비','새벽','고요',
-  '탑','문','열쇠','비밀','계약','각인','망각','환상','진실','운명','심장','숨',
-  '파도','숲','밤','꿈','상처','손끝','온기','절망','희망','오해','약속','거리',
-  '가면','초대','도망','추격','미소','눈물','폭풍','검','마법','저주','기도','성좌',
-  '아이돌','무대','연습','데뷔','카메라','컷','씬','편집','서사','클리셰','반전'
-];
+const ACID_POOL_ = `
+사랑 고백 후회 구원 침묵 불꽃 그림자 빛 달 비 새벽 고요
+탑 문 열쇠 비밀 계약 각인 망각 환상 진실 운명 심장 숨
+파도 숲 밤 꿈 상처 손끝 온기 절망 희망 오해 약속 거리
+가면 초대 도망 추격 미소 눈물 폭풍 검 마법 저주 기도 성좌
+아이돌 무대 연습 데뷔 카메라 컷 씬 편집 서사 클리셰 반전
+주인공 조연 악역 조력자 비밀친구 첫사랑 재회 이별 고백편지
+기억 상실 회귀 빙의 환생 계약결혼 정략결혼 운명론 짝사랑
+질투 오해 화해 포옹 입맞춤 손잡기 약혼 결혼식 신혼여행
+마감 원고 퇴고 교정 교열 초고 개고 문장 문단 대사 독백
+플롯 설정 세계관 인물 관계 사건 복선 떡밥 전환 결말
+장르 로맨스 판타지 현대물 무협 미스터리 스릴러 코미디 드라마
+영화 화면 장면 음악 조명 색감 클로즈업 롱테이크 몽타주
+책상 노트 펜 키보드 커피 차 쿠키 야식 담요 창문 별빛
+여름 가을 겨울 봄 벚꽃 장마 눈송이 바람 햇살 노을 안개
+바다 호수 강 산 들판 골목 지하철 기차 공항 호텔 도서관
+교수 강의 수업 과제 발표 토론 팀플 시험 답안 성적 방학
+캠퍼스 교실 복도 옥상 운동장 동아리 축제 공연 전시 연습실
+카페 서점 편의점 식당 공원 병원 회사 회의실 작업실 스튜디오
+소설 시나리오 웹툰 게임 방송 라디오 공연 무대인사 인터뷰
+질문 대답 선택 결심 용기 불안 기대 설렘 긴장 안도 위로
+인사 안녕 고마워 미안해 괜찮아 수고했어 힘내자 잘했어 파이팅
+기적 우연 필연 가능성 시간 공간 차원 미래 과거 현재 순간
+왕관 기사 공주 황제 마탑 용 드래곤 요정 마녀 정령 연금술
+검술 궁수 마법사 사제 도적 기사단 길드 퀘스트 던전 보물
+도시 야경 신호등 횡단보도 우산 골목길 편지함 엘리베이터 계단
+목소리 표정 눈빛 체온 향기 습관 버릇 농담 장난 웃음소리
+미완성 완성 시작 끝맺음 도전 실패 성공 성장 변화 발견
+독자 댓글 추천 조회수 표지 제목 부제 연재 공모전 출간 계약서
+영감 집중 휴식 타이머 루틴 목표 계획 체크리스트 성취 보상
+폭파 수다 대화 공감 리액션 하트 박수 반짝 축하 응원
+초콜릿 딸기 복숭아 레몬 민트 바닐라 치즈 라떼 에이드 빙수
+고양이 강아지 토끼 여우 곰 판다 수달 햄스터 병아리 나비
+우주 행성 별자리 은하 혜성 유성 달빛 태양 구름 번개 무지개
+정원 꽃잎 장미 튤립 라일락 국화 수선화 민들레 허브 나무
+노래 춤 리듬 멜로디 화음 박자 가사 앨범 플레이리스트 이어폰
+비망록 지도 나침반 가방 사진 앨범 상자 열람실 아지트 암호
+` .trim().split(/\s+/);
 const ACID_BONUS_POOL_ = [
-  '✨보너스','⚡스피드','💎잭팟','🔥콤보','🌟이벤트','🎯정답','🧪산성','☔폭우'
+  '✨보너스','⚡스피드','💎잭팟','🔥콤보','🌟이벤트','🎯정답','🧪산성','☔폭우',
+  '🚀가속','🎁선물','👑크라운','🍀행운','🫧버블','💫별빛'
 ];
+
+function acidPickWord_(used){
+  const pool = ACID_POOL_;
+  if(!pool.length) return '단어';
+  const picked = used || new Set();
+  const tries = Math.min(pool.length * 2, 80);
+  for(let i=0; i<tries; i++){
+    const w = pool[Math.floor(Math.random() * pool.length)] || '단어';
+    if(!picked.has(w)){
+      picked.add(w);
+      return w;
+    }
+  }
+  const fallback = pool[Math.floor(Math.random() * pool.length)] || '단어';
+  picked.add(fallback);
+  return fallback;
+}
 
 
 function fbAcidPlayerPath_(roomId, uid){ return `${fbAcidPlayersPath_(roomId)}/${uid}`; }
@@ -6095,6 +6219,18 @@ function buildAcidSchedule_(cur){
   }
 }
 
+let acidOverlayRefreshTimer_ = null;
+function acidScheduleOverlayRefresh_(delay = 120){
+  if(acidOverlayRefreshTimer_) return;
+  acidOverlayRefreshTimer_ = window.setTimeout(()=>{
+    acidOverlayRefreshTimer_ = null;
+    try{
+      const title = String($('ovTitle')?.textContent || '');
+      if(title.includes('산성비')) acidRender_();
+    }catch(e){}
+  }, delay);
+}
+
 function initAcidRain_(roomId){
   try{
     const curRef = window.FB.ref(window.FB.db, fbAcidCurrentPath_(roomId));
@@ -6113,7 +6249,7 @@ function initAcidRain_(roomId){
       // 오버레이가 열려있으면 UI 갱신
       try{
         const title = String($('ovTitle')?.textContent || '');
-        if (title.includes('산성비')) acidRender_();
+        if (title.includes('산성비')) acidScheduleOverlayRefresh_();
       }catch(e){}
     });
 
@@ -6123,7 +6259,7 @@ function initAcidRain_(roomId){
       acidPlayers_ = snap.exists() ? (snap.val() || {}) : {};
       try{
         const title = String($('ovTitle')?.textContent || '');
-        if (title.includes('산성비')) acidRender_();
+        if (title.includes('산성비')) acidScheduleOverlayRefresh_();
       }catch(e){}
     });
   }catch(e){
@@ -6240,7 +6376,7 @@ function acidRender_(){
         </div>
       </div>
 
-      <div class="acidMiniNote">팁: 오버레이 크기를 키우면 단어가 더 잘 보여요 👀</div>
+      <div class="acidMiniNote">팁: 단어 수를 가볍게 줄여 더 부드러워졌어요. 사진은 채팅창에 놓은 뒤 Enter 한 번이면 완료 즉시 전송돼요 👀</div>
     </div>
   `;
   showOverlayHtml('☔ 산성비', html, false);
@@ -6352,7 +6488,7 @@ function acidStartLoop_(){
   const spawnWave_ = (stage, cur, now)=>{
     const baseFall = (Number(cur.fallMs||0) || ACID_FALL_MS_) * 2;
     const maxN = ACID_MAX_ACTIVE_;
-    const n = Math.max(6, Math.min(maxN, 10 + Math.floor(Math.random()*6))); // 10~15 (min 6)
+    const n = Math.max(6, Math.min(maxN, 7 + Math.floor(Math.random()*4))); // 7~10: 단어 겹침·DOM 부하를 줄여 더 부드럽게
     // x positions with overlap avoidance
     const xs = [];
     const minGap = 6; // percent
@@ -6366,15 +6502,16 @@ function acidStartLoop_(){
     }
     xs.sort((a,b)=>a-b);
 
+    const used = new Set(Array.from(acidUi_.active.values()).map((it)=>String(it?.w || '')));
     acidUi_.waveId = (acidUi_.waveId||0) + 1;
     for (let i=0;i<n;i++){
       if (acidUi_.active.size >= maxN) break;
-      const w = ACID_POOL_[Math.floor(Math.random()*ACID_POOL_.length)] || '단어';
+      const w = acidPickWord_(used);
       const fallMs = Math.max(2600, Math.round(baseFall * (0.75 + Math.random()*0.95))); // 느림~빠름
       const id = `w${acidUi_.waveId}_${i}_${now}`;
       const it = { id, w, xPct: xs[i], spawnAt: now, fallMs, points: 1, isEvent:false, state:'live' };
+      it.el = acidAddWordEl_(stage, id, it.w, it.xPct, it.points, it.isEvent);
       acidUi_.active.set(id, it);
-      acidAddWordEl_(stage, id, it.w, it.xPct, it.points, it.isEvent);
     }
   };
 
@@ -6388,8 +6525,8 @@ function acidStartLoop_(){
     const points = 3;
     const id = `e_${now}_${Math.floor(Math.random()*9999)}`;
     const it = { id, w, xPct:x, spawnAt: now, fallMs, points, isEvent:true, state:'live' };
+    it.el = acidAddWordEl_(stage, id, it.w, it.xPct, it.points, it.isEvent);
     acidUi_.active.set(id, it);
-    acidAddWordEl_(stage, id, it.w, it.xPct, it.points, it.isEvent);
   };
 
   const scheduleNextEvent_ = (now)=>{
@@ -6421,6 +6558,9 @@ function acidStartLoop_(){
       acidUi_.active = new Map();
       try{ stage.innerHTML = ''; }catch(e){}
       acidUi_.hits = 0; acidUi_.misses = 0;
+      acidUi_.lastHudAt = 0;
+      acidUi_.lastStageMeasureAt = 0;
+      acidUi_.stageH = 0;
       acidUi_.waveId = 0;
       acidUi_.nextEventAt = 0;
       // 즉시 첫 웨이브 생성(게임 시작하자마자 단어 내려오기)
@@ -6429,8 +6569,12 @@ function acidStartLoop_(){
       acidUi_.nextEventAt = now + (4000 + Math.floor(Math.random()*4000));
     }
 
-    if (remainEl) remainEl.textContent = `${(remainMs/1000).toFixed(1)}s`;
-    if (hmEl) hmEl.textContent = `${acidUi_.hits}/${acidUi_.misses}`;
+    // HUD는 매 프레임이 아니라 초당 약 8번만 갱신합니다.
+    if(now - Number(acidUi_.lastHudAt || 0) >= 120){
+      acidUi_.lastHudAt = now;
+      if (remainEl) remainEl.textContent = `${(remainMs/1000).toFixed(1)}s`;
+      if (hmEl) hmEl.textContent = `${acidUi_.hits}/${acidUi_.misses}`;
+    }
 
     // 이벤트 단어: 진행 중 중간중간 빠르게 등장
     if (acidUi_.nextEventAt && now >= acidUi_.nextEventAt){
@@ -6438,21 +6582,30 @@ function acidStartLoop_(){
       scheduleNextEvent_(now);
     }
 
-    // 포지션 업데이트 + 미스 처리 (px 기반)
-    const stageH = Math.max(1, stage.clientHeight || 340);
+    // 포지션 업데이트 + 미스 처리
+    // - 스테이지 높이는 0.5초마다만 재측정
+    // - 매 프레임 querySelector 대신, 생성 시 저장한 DOM 참조를 사용
+    if(now - Number(acidUi_.lastStageMeasureAt || 0) >= 500 || !acidUi_.stageH){
+      acidUi_.stageH = Math.max(1, stage.clientHeight || 340);
+      acidUi_.lastStageMeasureAt = now;
+    }
+    const stageH = acidUi_.stageH;
     acidUi_.active.forEach((it, id)=>{
-      const el = stage.querySelector?.(`.acidWord[data-id="${id}"]`);
-      if (!el) return;
+      const el = it && it.el;
+      if (!el || !el.isConnected){
+        acidUi_.active.delete(id);
+        return;
+      }
       const age = now - it.spawnAt;
       const fallMsIt = Number(it.fallMs||0) || Number(cur.fallMs||0) || ACID_FALL_MS_;
       const travel = stageH + 80; // top(-30)~bottom(+50)
       const yPx = (age / fallMsIt) * travel;
-      el.style.transform = `translate(-50%, ${yPx}px)`;
+      el.style.transform = `translate3d(-50%, ${Math.round(yPx)}px, 0)`;
       if (yPx >= (stageH + 50) && it.state === 'live'){
         it.state = 'miss';
         acidUi_.misses++;
         try{ el.classList.add('miss'); }catch(e){}
-        setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 350);
+        window.setTimeout(()=>{ try{ el.remove(); }catch(e){} }, 250);
         acidUi_.active.delete(id);
       }
     });
@@ -6497,9 +6650,10 @@ function acidAddWordEl_(stage, id, word, xPct, points, isEvent){
     el.setAttribute('data-word', String(word));
     el.textContent = word;
     el.style.left = `${xPct}%`;
-    el.style.transform = 'translate(-50%, 0%)';
+    el.style.transform = 'translate3d(-50%, 0, 0)';
     stage.appendChild(el);
-  }catch(e){}
+    return el;
+  }catch(e){ return null; }
 }
 
 function acidNormAcid_(s){
@@ -6555,7 +6709,7 @@ function acidSubmit_(){
     if (it) it.state = 'hit';
     acidUi_.hits++;
     try{
-      const el = stage.querySelector?.(`.acidWord[data-id="${matchId}"]`);
+      const el = it?.el || stage.querySelector?.(`.acidWord[data-id="${matchId}"]`);
       if (el) el.remove();
     }catch(e){}
     acidUi_.active.delete(matchId);
@@ -8212,6 +8366,38 @@ function computePresenceFromConn_(val){
   // 2) 해시는 브라우저 콘솔에서:  await sha256Hex_('원하는비번')  로 쉽게 얻을 수 있어요.
   const NOTICE_ADMIN_PW_SHA256_ = '5d6d5393f040bd92c36b7a791f80b1c8827125715a392c57725f74df89458df7'; // <- 여기에 붙여넣기
   const NOTICE_ADMIN_SS_KEY_ = 'VENT_NOTICE_ADMIN_OK_V1';
+
+  // 💣 세션 폭파는 공지 관리자 비밀번호를 함께 사용합니다.
+  // 별도 비밀번호로 바꾸고 싶다면 이 값만 다른 SHA-256 해시로 교체하세요.
+  const SESSION_RESET_PW_SHA256_ = NOTICE_ADMIN_PW_SHA256_;
+
+  async function ensureSessionResetAdmin_(typedPassword){
+    try{ await window.FB.ensureAnonAuth(); }catch(e){}
+
+    if (!isSudaSessionAdmin_()){
+      showOverlay('💣 관리자 전용', '세션 폭파는 등록된 수다방 방장 계정에서만 할 수 있어요.');
+      return false;
+    }
+
+    if (!SESSION_RESET_PW_SHA256_){
+      showOverlay('💣 비밀번호 설정 필요', '세션 폭파 관리자 비밀번호 해시가 비어 있어요.');
+      return false;
+    }
+
+    let pw = String(typedPassword || '').trim();
+    if (!pw){
+      pw = prompt('🔒 세션 폭파 관리자 비밀번호를 입력해 주세요.') || '';
+    }
+    if (!pw) return false;
+
+    try{
+      const h = await sha256Hex_(pw);
+      if (h === SESSION_RESET_PW_SHA256_) return true;
+    }catch(e){}
+
+    alert('❌ 관리자 비밀번호가 맞지 않습니다.');
+    return false;
+  }
 
   async function sha256Hex_(str){
     const enc = new TextEncoder().encode(String(str ?? ''));
