@@ -2932,6 +2932,36 @@ body{
   }
 }
 </style>
+
+<!-- SUDA_COLLAPSED_BGM_BADGE_V19: independent BGM note for folded mobile header -->
+<style id="sudaCollapsedBgmBadgeV19">
+#collapsedBgmBadge{ display:none; }
+@media (max-width:760px){
+  /* 접힌 헤더의 독립 BGM 표시등: 미니 재생바의 숨김 규칙과 분리 */
+  body.tbCollapsed #collapsedBgmBadge{
+    display:inline-flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    flex:0 0 34px !important;
+    width:34px !important;
+    min-width:34px !important;
+    height:34px !important;
+    min-height:34px !important;
+    padding:0 !important;
+    border-radius:11px !important;
+    border:1px solid rgba(255,105,180,.24) !important;
+    background:rgba(255,255,255,.88) !important;
+    box-shadow:0 4px 12px rgba(0,0,0,.06) !important;
+    font-size:16px !important;
+    line-height:1 !important;
+    cursor:pointer;
+  }
+  body.tbCollapsed #collapsedBgmBadge:active{ transform:translateY(1px); }
+  body.tbCollapsed #collapsedBgmBadge .noteDance{ display:inline-block; transform-origin:50% 70%; }
+  body.tbCollapsed #collapsedBgmBadge.playing .noteDance{ animation:noteDance .9s ease-in-out infinite; }
+}
+</style>
+
 </head>
 
 <body>
@@ -2965,6 +2995,7 @@ body{
         </div>
       </div>
 
+      <button id="collapsedBgmBadge" type="button" title="현재 BGM 상태 · 누르면 같이 듣기 설정을 열어요"><span class="noteDance">🎵</span></button>
       <button id="btnTopbarToggle" type="button" title="상단바 접기/펼치기 (접속자 명단도 같이 접힘)">⬆️</button>
       <button id="btnMenu" type="button" title="메뉴">☰ 메뉴</button>
       <button id="btnLeave" type="button" title="나가기">🏃‍♂️나가기</button>
@@ -11897,6 +11928,7 @@ $('jumpBtn')?.addEventListener('click', ()=>{
       }
 
       note.classList.toggle('playing', !!playing);
+      try{ $('collapsedBgmBadge')?.classList.toggle('playing', !!playing); }catch(e){}
 
       if (playing){
         if (kind === 'file'){
@@ -11921,6 +11953,9 @@ $('jumpBtn')?.addEventListener('click', ()=>{
     $('miniPlay')?.addEventListener('click', ()=>{ try{ if (bgmRemote_ && String(bgmRemote_.state||'')==='paused') bgmResume_(); else $('btnBgmPlay').click(); }catch(e){} });
     $('miniPause')?.addEventListener('click', ()=>{ try{ $('btnBgmPause').click(); }catch(e){} });
     $('miniAllow')?.addEventListener('click', ()=>{ try{ $('btnBgmAllow').click(); }catch(e){} });
+    $('collapsedBgmBadge')?.addEventListener('click', ()=>{
+      try{ $('btnBgmAllow')?.click(); }catch(e){}
+    });
 
     // Volume range sync (popover -> existing range)
     const vRange = $('volRange');
