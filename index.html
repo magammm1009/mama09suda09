@@ -2524,6 +2524,264 @@ body{
 }
 </style>
 
+
+<!-- SUDA_MOBILE_KEYBOARD_SAFE_V15: iPhone/Android visual viewport + compact mobile header -->
+<style id="sudaMobileKeyboardSafeV15">
+/* 화면에 보이는 장황한 설명은 정리합니다. 기능·관리자 권한·데이터 처리는 건드리지 않습니다. */
+.hint{ display:none !important; }
+
+/* 모바일은 화면 전체를 하나의 앱 레이아웃으로 고정합니다.
+   키보드가 뜨면 JS가 --sudaMobileVh를 visualViewport 높이로 갱신하고,
+   메시지 목록만 남은 공간을 스크롤하도록 만듭니다. */
+:root{ --sudaMobileVh: 100dvh; }
+
+@media (max-width: 760px){
+  html,
+  body{
+    width:100% !important;
+    height:var(--sudaMobileVh) !important;
+    min-height:0 !important;
+    overflow:hidden !important;
+    overscroll-behavior:none;
+    -webkit-overflow-scrolling:auto;
+  }
+  body{
+    position:fixed !important;
+    inset:0 !important;
+  }
+  .wrap{
+    width:100% !important;
+    height:var(--sudaMobileVh) !important;
+    min-height:0 !important;
+    max-width:none !important;
+    overflow:hidden !important;
+    padding:8px !important;
+    padding-top:calc(8px + env(safe-area-inset-top)) !important;
+    padding-bottom:calc(8px + env(safe-area-inset-bottom)) !important;
+    gap:8px !important;
+  }
+
+  /* 방 헤더: 세션값은 모바일에서 숨기고, 방 이름·폭파 타이머·공지·인원·메뉴만 남깁니다. */
+  .topbar{
+    position:relative !important;
+    top:auto !important;
+    flex:0 0 auto !important;
+    min-height:0 !important;
+    display:flex !important;
+    flex-wrap:nowrap !important;
+    align-items:center !important;
+    gap:6px !important;
+    padding:8px 9px !important;
+    border-radius:14px !important;
+  }
+  .brand{
+    flex:1 1 auto !important;
+    min-width:0 !important;
+    gap:6px !important;
+  }
+  .topbar .icon{
+    width:34px !important;
+    height:34px !important;
+    min-width:34px !important;
+    border-radius:11px !important;
+    font-size:18px !important;
+  }
+  .brandInfo{
+    flex:1 1 auto !important;
+    min-width:0 !important;
+    gap:5px !important;
+  }
+  .brandText{
+    flex:1 1 auto !important;
+    min-width:0 !important;
+  }
+  .titleLine{ min-width:0 !important; }
+  .roomTitle{ font-size:16px !important; }
+  .boomDot{ width:8px !important; height:8px !important; }
+  .boomText{
+    min-width:0 !important;
+    overflow:hidden !important;
+    text-overflow:ellipsis !important;
+    white-space:nowrap !important;
+    font-size:11px !important;
+  }
+  #sessLabel{ display:none !important; }
+  #btnNoticePin{
+    width:34px !important;
+    height:34px !important;
+    min-width:34px !important;
+    border-radius:11px !important;
+    font-size:16px !important;
+  }
+  #btnOnlineBtn{
+    width:auto !important;
+    height:34px !important;
+    min-width:48px !important;
+    padding:0 7px !important;
+    gap:3px !important;
+    border-radius:11px !important;
+  }
+  #btnOnlineBtn .onlineIco{ font-size:15px !important; }
+  #btnOnlineBtn .onlineCnt{ font-size:12px !important; }
+  .actions{
+    flex:0 0 auto !important;
+    min-width:0 !important;
+    gap:4px !important;
+    flex-wrap:nowrap !important;
+  }
+  .miniBgmBar,
+  #btnTopbarToggle{ display:none !important; }
+  #btnMenu,
+  #btnLeave{
+    width:34px !important;
+    min-width:34px !important;
+    height:34px !important;
+    min-height:34px !important;
+    padding:0 !important;
+    border-radius:11px !important;
+    font-size:0 !important;
+  }
+  #btnMenu::before{ content:"☰"; font-size:18px; line-height:1; }
+  #btnLeave::before{ content:"🏃"; font-size:17px; line-height:1; }
+
+  /* 모바일 채팅 카드: 부모·자식 모두 min-height:0을 주어 #log가 0px로 접히지 않게 합니다. */
+  .layout{
+    flex:1 1 0 !important;
+    min-height:0 !important;
+    height:auto !important;
+    display:flex !important;
+    flex-direction:column !important;
+    gap:0 !important;
+    overflow:hidden !important;
+  }
+  .layout > .card:not(.side){
+    flex:1 1 0 !important;
+    min-height:0 !important;
+    height:auto !important;
+    display:flex !important;
+    flex-direction:column !important;
+    overflow:hidden !important;
+    padding:8px !important;
+    border-radius:16px !important;
+  }
+  .layout > .side,
+  .card.side{ display:none !important; }
+
+  /* 닉네임·게임·도구 버튼은 한 줄 레일로 유지합니다. */
+  .nameRow{
+    flex:0 0 auto !important;
+    margin-bottom:8px !important;
+    gap:4px !important;
+    min-height:34px !important;
+    padding:0 !important;
+    overflow-x:auto !important;
+    overflow-y:hidden !important;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  .nameRow::-webkit-scrollbar{ display:none; }
+  .nameRow #user{
+    flex:0 0 64px !important;
+    width:64px !important;
+    min-width:64px !important;
+    height:34px !important;
+    min-height:34px !important;
+    padding:0 6px !important;
+    border-radius:11px !important;
+    font-size:12px !important;
+  }
+  .nameRow .miniGameBtn,
+  .nameRow #btnRace,
+  .nameRow #btnAcid,
+  .nameRow #btnMarble,
+  .nameRow #btnRummi{
+    flex:0 0 auto !important;
+    width:auto !important;
+    min-width:0 !important;
+    height:34px !important;
+    min-height:34px !important;
+    padding:0 6px !important;
+    gap:2px !important;
+    border-radius:11px !important;
+    font-size:10.5px !important;
+    letter-spacing:-.25px !important;
+  }
+  .nameRow .iconBtnSmall{
+    flex:0 0 34px !important;
+    width:34px !important;
+    min-width:34px !important;
+    height:34px !important;
+    min-height:34px !important;
+    border-radius:11px !important;
+    font-size:15px !important;
+  }
+
+  /* 채팅 목록만 남은 세로 공간을 쓰고, 입력부는 항상 카드 하단에 남습니다. */
+  #raceBar{
+    flex:0 0 auto !important;
+    max-height:42vh !important;
+    overflow:auto !important;
+  }
+  #log{
+    flex:1 1 0 !important;
+    min-height:0 !important;
+    height:auto !important;
+    max-height:none !important;
+    margin:0 !important;
+    overflow-y:auto !important;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+  }
+  .typingWrap,
+  .imagePendingBar,
+  .sendRow{
+    flex:0 0 auto !important;
+  }
+  .typingWrap{
+    margin-top:8px !important;
+    gap:6px !important;
+  }
+  .typingWrap .pickerBtn{
+    width:38px !important;
+    height:38px !important;
+    min-width:38px !important;
+    border-radius:11px !important;
+  }
+  .typingBar{
+    min-height:38px !important;
+    font-size:11px !important;
+  }
+  .sendRow{ margin-top:8px !important; }
+  #msg{
+    min-height:42px !important;
+    height:42px !important;
+    max-height:42px !important;
+    padding:10px 12px !important;
+    border-radius:13px !important;
+    font-size:16px !important; /* iOS 자동 확대 방지 */
+    line-height:1.25 !important;
+  }
+  .jumpBtn{ bottom:62px !important; }
+
+  /* 키보드가 올라온 동안에는 게임 레일만 잠시 접어 최신 대화와 입력칸을 우선합니다. */
+  body.sudaKeyboardOpen .topbar{ padding:5px 8px !important; }
+  body.sudaKeyboardOpen .nameRow{ display:none !important; }
+  body.sudaKeyboardOpen .layout > .card:not(.side){ padding-top:7px !important; }
+}
+
+@media (max-width: 380px){
+  .roomTitle{ font-size:15px !important; }
+  .boomText{ font-size:10px !important; }
+  #btnOnlineBtn{ min-width:42px !important; padding:0 5px !important; }
+  #btnOnlineBtn .onlineIco{ display:none !important; }
+  .nameRow .miniGameBtn,
+  .nameRow #btnRace,
+  .nameRow #btnAcid,
+  .nameRow #btnMarble,
+  .nameRow #btnRummi{ font-size:10px !important; padding:0 5px !important; }
+}
+</style>
+
 </head>
 
 <body>
@@ -2711,7 +2969,7 @@ body{
       <button id="btnRaceClear" class="raceMiniBtn" type="button" title="입력 지우기">⤫</button>
     </div>
   </div>
-  <input id="raceInput" placeholder="여기에 문구를 그대로 타이핑! (이모지 자동 무시 / 기호는 그대로) — Enter 제출" disabled />
+  <input id="raceInput" placeholder="문구 입력" disabled />
   <div class="raceDiffView" id="raceDiffView"></div>
   <div class="raceHint" id="raceHint"></div>
 
@@ -2746,7 +3004,7 @@ body{
         </div>
       </div>
       <div class="sendRow imageDropZone" id="imageDropZone">
-        <textarea id="msg" rows="2" placeholder="메시지 입력 (Enter=전송 / Shift+Enter=줄바꿈 / 사진을 끌어 놓으면 자동 업로드)"></textarea>
+        <textarea id="msg" rows="2" placeholder="메시지 입력"></textarea>
         <button id="sendBtn" type="button">전송</button>
       </div>
 
@@ -11607,6 +11865,114 @@ document.addEventListener('click', (e)=>{
   })();
 
 
+</script>
+
+
+<!-- SUDA_MOBILE_KEYBOARD_SAFE_V15: no logic/data changes; visual viewport only -->
+<script id="sudaMobileKeyboardSafeV15Script">
+(() => {
+  const $id = (id) => document.getElementById(id);
+  const isCompactMobile = () => !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches);
+  let focusTimer = 0;
+  let lastFocusNearBottom = false;
+
+  function visualHeight(){
+    const vv = window.visualViewport;
+    const h = Number(vv?.height || window.innerHeight || document.documentElement?.clientHeight || 0);
+    return Math.max(280, Math.round(h));
+  }
+
+  function setMobileViewport(){
+    const log = $id('log');
+    const size = $id('logSize');
+    if(!isCompactMobile()){
+      document.documentElement.style.removeProperty('--sudaMobileVh');
+      document.body?.classList.remove('sudaKeyboardOpen');
+      if(log && size){
+        log.style.maxHeight = '';
+        log.style.height = String(Number(size.value || 320)) + 'px';
+      }
+      return;
+    }
+
+    document.documentElement.style.setProperty('--sudaMobileVh', visualHeight() + 'px');
+
+    // 기존 모바일 높이 슬라이더의 inline height/max-height가 flex 채팅을 밀어내지 않도록 해제합니다.
+    if(log){
+      log.style.height = 'auto';
+      log.style.maxHeight = 'none';
+    }
+  }
+
+  function resetWindowScroll(){
+    try{ window.scrollTo(0, 0); }catch(e){}
+  }
+
+  function stabilizeComposer(){
+    setMobileViewport();
+    resetWindowScroll();
+    requestAnimationFrame(() => {
+      setMobileViewport();
+      resetWindowScroll();
+      const log = $id('log');
+      if(log && lastFocusNearBottom){ log.scrollTop = log.scrollHeight; }
+    });
+  }
+
+  function onFocusIn(e){
+    if(!isCompactMobile()) return;
+    const target = e.target;
+    if(!(target instanceof HTMLElement) || !target.matches('textarea, input[type="text"], input:not([type])')) return;
+
+    const log = $id('log');
+    lastFocusNearBottom = !!log && (log.scrollHeight - log.scrollTop - log.clientHeight < 80);
+    document.body?.classList.add('sudaKeyboardOpen');
+    stabilizeComposer();
+
+    // iOS Safari가 키보드 애니메이션 뒤 한 번 더 루트 스크롤을 거는 경우를 막는 보정입니다.
+    clearTimeout(focusTimer);
+    focusTimer = window.setTimeout(stabilizeComposer, 120);
+    window.setTimeout(stabilizeComposer, 300);
+  }
+
+  function onFocusOut(e){
+    const target = e.target;
+    if(!(target instanceof HTMLElement) || !target.matches('textarea, input[type="text"], input:not([type])')) return;
+    clearTimeout(focusTimer);
+    focusTimer = window.setTimeout(() => {
+      const active = document.activeElement;
+      const stillTyping = active instanceof HTMLElement && active.matches('textarea, input[type="text"], input:not([type])');
+      if(!stillTyping) document.body?.classList.remove('sudaKeyboardOpen');
+      setMobileViewport();
+      resetWindowScroll();
+    }, 160);
+  }
+
+  function init(){
+    // 기존 sync 함수가 키보드 중 #log를 재측정해 0px로 만들던 경로를 모바일에서만 무력화합니다.
+    const previousSync = window.syncMobileLogFit_;
+    window.syncMobileLogFit_ = function safeMobileLogFit(){
+      if(!isCompactMobile()){
+        try{ return previousSync?.apply(this, arguments); }catch(e){ return; }
+      }
+      setMobileViewport();
+    };
+
+    document.addEventListener('focusin', onFocusIn, true);
+    document.addEventListener('focusout', onFocusOut, true);
+    window.addEventListener('resize', setMobileViewport, { passive:true });
+    window.addEventListener('orientationchange', () => window.setTimeout(setMobileViewport, 180), { passive:true });
+    if(window.visualViewport){
+      window.visualViewport.addEventListener('resize', setMobileViewport, { passive:true });
+      window.visualViewport.addEventListener('scroll', setMobileViewport, { passive:true });
+    }
+    setMobileViewport();
+  }
+
+  // 이 파일의 module 초기화가 끝난 뒤 덮어쓰도록 load 이후에 시작합니다.
+  if(document.readyState === 'complete') init();
+  else window.addEventListener('load', () => window.setTimeout(init, 0), { once:true });
+})();
 </script>
 
 </body>
