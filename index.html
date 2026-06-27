@@ -2933,12 +2933,13 @@ body{
 }
 </style>
 
-<!-- SUDA_COLLAPSED_BGM_BADGE_V19: independent BGM note for folded mobile header -->
-<style id="sudaCollapsedBgmBadgeV19">
+<!-- SUDA_MOBILE_BGM_BADGE_V20: 모바일 폭 축소 시 재생바 대신 음표 표시등 유지 -->
+<style id="sudaMobileBgmBadgeV20">
 #collapsedBgmBadge{ display:none; }
 @media (max-width:760px){
-  /* 접힌 헤더의 독립 BGM 표시등: 미니 재생바의 숨김 규칙과 분리 */
-  body.tbCollapsed #collapsedBgmBadge{
+  /* 모바일 컴팩트 헤더에서는 miniBgmBar가 숨겨져도 이 배지는 항상 남습니다.
+     tbCollapsed 클래스 유무와 무관하게 적용합니다. */
+  .topbar .actions > #collapsedBgmBadge{
     display:inline-flex !important;
     align-items:center !important;
     justify-content:center !important;
@@ -2948,6 +2949,7 @@ body{
     height:34px !important;
     min-height:34px !important;
     padding:0 !important;
+    margin:0 !important;
     border-radius:11px !important;
     border:1px solid rgba(255,105,180,.24) !important;
     background:rgba(255,255,255,.88) !important;
@@ -2956,9 +2958,9 @@ body{
     line-height:1 !important;
     cursor:pointer;
   }
-  body.tbCollapsed #collapsedBgmBadge:active{ transform:translateY(1px); }
-  body.tbCollapsed #collapsedBgmBadge .noteDance{ display:inline-block; transform-origin:50% 70%; }
-  body.tbCollapsed #collapsedBgmBadge.playing .noteDance{ animation:noteDance .9s ease-in-out infinite; }
+  .topbar .actions > #collapsedBgmBadge:active{ transform:translateY(1px); }
+  .topbar .actions > #collapsedBgmBadge .noteDance{ display:inline-block; transform-origin:50% 70%; }
+  .topbar .actions > #collapsedBgmBadge.playing .noteDance{ animation:noteDance .9s ease-in-out infinite; }
 }
 </style>
 
