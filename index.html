@@ -2782,6 +2782,110 @@ body{
 }
 </style>
 
+<!-- SUDA_MENU_SPACING_V16: menu controls only; no app logic/data changes -->
+<style id="sudaMenuSpacingV16">
+/* 메뉴 안의 버튼·입력칸 사이를 일정한 리듬으로 정리합니다. */
+.menuPanel{
+  padding:12px !important;
+}
+.menuHeader{
+  padding:6px 2px 12px !important;
+  margin-bottom:2px;
+}
+.menuHeader .menuClose{
+  min-width:34px;
+  min-height:34px;
+  padding:6px 9px;
+}
+
+/* 각 메뉴 묶음은 세로 간격을 block 자체가 관리합니다.
+   기존 inline margin-top 값은 여기서만 정리하여 버튼끼리 붙는 현상을 없앱니다. */
+.menuPanel .block{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:13px;
+  margin-top:12px;
+}
+.menuPanel .block > .labelRow{
+  min-height:22px;
+  margin:0 !important;
+}
+.menuPanel .block > .row2{
+  margin:0 !important;
+  gap:9px !important;
+}
+.menuPanel .block > input,
+.menuPanel .block > button{
+  margin:0 !important;
+  min-height:42px;
+}
+.menuPanel .block .row2 > button{
+  min-height:40px;
+  padding:9px 10px;
+}
+.menuPanel .block > .playlistList,
+.menuPanel .block > .reqList,
+.menuPanel .block > #menuVolBlock{
+  margin:0 !important;
+}
+.menuPanel #menuVolBlock{
+  padding-top:2px;
+}
+.menuPanel #menuVolBlock .labelRow{
+  margin-bottom:0;
+}
+.menuPanel .playlistList,
+.menuPanel .reqList{
+  gap:10px;
+}
+.menuPanel .plItem,
+.menuPanel .reqItem{
+  gap:10px;
+  padding:11px 12px;
+}
+.menuPanel .plBtns,
+.menuPanel .reqBtns{
+  gap:8px;
+}
+.menuPanel .tinyBtn{
+  min-height:32px;
+  padding:6px 9px;
+}
+
+@media (max-width:760px){
+  .menuPanel{
+    width:min(360px, calc(100vw - 16px));
+    padding:10px !important;
+  }
+  .menuHeader{
+    padding:5px 2px 10px !important;
+  }
+  .menuPanel .block{
+    gap:9px;
+    padding:11px;
+    margin-top:10px;
+  }
+  .menuPanel .block > input,
+  .menuPanel .block > button,
+  .menuPanel .block .row2 > button{
+    min-height:38px;
+    padding:8px 9px;
+    font-size:13px;
+  }
+  .menuPanel .block > .row2{
+    gap:8px !important;
+  }
+  .menuPanel .playlistList,
+  .menuPanel .reqList{
+    gap:9px;
+  }
+  .menuPanel .plItem,
+  .menuPanel .reqItem{
+    padding:10px;
+  }
+}
+</style>
 </head>
 
 <body>
