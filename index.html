@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>💣Boom! v13</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY | SESSION_RESET_LOCK_V10 | ADMIN_AUTH_UI_V11 | REMOTE_PASSWORD_SETUP_V12 -->
+  <title>💣Boom! v17</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY | SESSION_RESET_LOCK_V10 | ADMIN_AUTH_UI_V11 | REMOTE_PASSWORD_SETUP_V12 -->
+  <!-- YT_PLAYLIST_URL_SUPPORT_V17 -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
   <style>
     :root{
@@ -2944,7 +2945,7 @@ body{
 <div class="hint" style="margin-top:8px;">
   • DJ만 BGM 재생/변경 가능해요. (DJ 맡기=필요하면 가져오기 / DJ 양도=지정해서 넘기기)
 </div>
-          <input id="bgmUrl" placeholder="유튜브 링크 붙여넣기 (예: https://youtu.be/VIDEOID)" />
+          <input id="bgmUrl" placeholder="유튜브 영상·재생목록 링크 붙여넣기" />
           <div class="row2" style="margin-top:8px;">
             <button id="btnBgmPlay" type="button">재생</button>
             <button id="btnBgmPause" type="button">일시정지</button>
@@ -2960,7 +2961,7 @@ body{
           </div>
 
           <div class="hint" style="margin-top:10px;">
-            ⚠️ 브라우저 정책 때문에 자동재생은 막혀서, 각자 “BGM 허용”을 한 번 눌러야 같이 들릴 수 있어요.
+            🎶 재생목록 주소에 <b>list=</b>가 들어 있으면 목록 전체를 재생해요. DJ 재생목록에서는 재생목록 하나가 한 항목으로 표시돼요.<br/>⚠️ 브라우저 정책 때문에 자동재생은 막혀서, 각자 “BGM 허용”을 한 번 눌러야 같이 들릴 수 있어요.
           </div>
         </div>
 
@@ -2972,7 +2973,7 @@ body{
           </div>
           <div class="hint" style="margin-top:8px;">
             • DJ가 만든 재생목록이 최우선(=DJ가 아닌 사람은 재생/변경 불가).<br/>
-            • 유튜브 링크는 <b>현재 입력창(bgmUrl)</b> 값을 그대로 추가해요.
+            • 유튜브 영상 링크와 <b>재생목록 링크</b>를 모두 추가할 수 있어요.<br/>• 재생목록은 DJ 목록에서 <b>한 개의 항목</b>으로 저장되며, 안의 영상은 유튜브 순서대로 이어서 재생돼요.
           </div>
 
           <!-- ✅ 큰 '전체 자동 재생' 버튼 -->
@@ -3712,6 +3713,11 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   let ytReady = false;
   let ytPlayerReady_ = false;
   let ytPendingApply_ = null;
+
+  // ✅ YouTube 재생목록 URL 지원: 현재 플레이어가 어떤 소스를 재생 중인지 추적
+  let ytSourceMode_ = 'video'; // 'video' | 'playlist'
+  let ytActivePlaylistId_ = '';
+  let ytPlaylistEndTimer_ = null;
 
 
 // ✅ YouTube iframe_api 로딩 보강판 (콜백 누락/차단 대응)
@@ -10286,15 +10292,18 @@ function remoteKey_(v){
   // ✅ 재생목록에서 온 재생인지(자동 넘김)
   playingFromPlaylist_ = !!v?.fromPlaylist;
 
-  const vid = String(v?.videoId || '');
+  const source = getYouTubeSource_(v);
+  const sourceId = source?.kind === 'yt_playlist'
+    ? `${source.playlistId}|${source.playlistIndex || 0}`
+    : String(source?.videoId || v?.videoId || '');
   const fileUrl = String(v?.fileUrl || v?.url || '');
   const st = String(v?.state || '');
   const pp = (v && typeof v.pausedPos === 'number') ? String(v.pausedPos) : '';
 
   // ⚠️ startedAt(시간)은 키에 포함하지 않음:
   // startedAt이 주기적으로 갱신되거나(혹은 클록 보정) 값이 미세하게 달라지면
-  // 매번 loadVideoById가 다시 실행되어 재생이 끊겨버림.
-  return `${kind}|${vid}|${fileUrl}|${st}|${pp}`;
+  // 매번 loadVideoById/loadPlaylist가 다시 실행되어 재생이 끊겨버림.
+  return `${kind}|${sourceId}|${fileUrl}|${st}|${pp}`;
 }
 
 
@@ -10336,7 +10345,7 @@ function stopYouTube_(){
 }
 
 function applyRemoteBgm_(v, force){
-  const kind = String(v?.kind || 'yt');
+  const rawKind = String(v?.kind || 'yt');
 
   const k = remoteKey_(v);
   if (!force && k === bgmLastAppliedKey_) return;
@@ -10349,14 +10358,16 @@ function applyRemoteBgm_(v, force){
   if (!bgmAllowed_){
     setBgmState('대기중(허용 필요)' + who);
     try{
-      if (kind === 'file'){
+      if (rawKind === 'file'){
         setMiniTitle_(v.title || v.fileName || 'MP3');
+      }else if (getYouTubeSource_(v)?.kind === 'yt_playlist'){
+        setMiniTitle_(v.title || '유튜브 재생목록');
       }
     }catch(e){}
     return;
   }
 
-  if (kind === 'file'){
+  if (rawKind === 'file'){
     // MP3 공유 기능 삭제됨 (유튜브만 지원)
     try{ stopYouTube_(); }catch(e){}
     try{ stopAudio_(); }catch(e){}
@@ -10365,15 +10376,19 @@ function applyRemoteBgm_(v, force){
     return;
   }
 
-  // default: YouTube
+  // default: YouTube (video or a whole YouTube playlist)
   stopAudio_();
 
-  const vid = String(v.videoId || '');
-  if (!vid) return;
+  const source = getYouTubeSource_(v);
+  if (!source){
+    setBgmState('유튜브 링크 확인 필요' + who);
+    return;
+  }
+  const isPlaylist = source.kind === 'yt_playlist';
 
   loadYouTubeApiOnce();
 
-  const p = ensureYtPlayer(vid);
+  const p = ensureYtPlayer(isPlaylist ? '' : source.videoId);
   if (!p){
     setBgmState('유튜브 로딩 중...');
     setTimeout(()=> applyRemoteBgm_(v, true), 600);
@@ -10393,18 +10408,21 @@ function applyRemoteBgm_(v, force){
   try{ p.setVolume(vol); }catch(e){}
 
   try{
-    // ✅ load + seek를 한 번에 (준비 타이밍 문제 줄이기)
     let target = 0;
-    if (state === 'paused' && typeof v.pausedPos === 'number'){
-      target = Math.max(0, Number(v.pausedPos || 0));
-    }else{
-      const startedAt = Number(v.startedAt || 0);
-      if (startedAt){
-        target = Math.max(0, (Date.now() - startedAt) / 1000);
+    // 재생목록은 유튜브 내부에서 영상 전환을 관리합니다.
+    // 따라서 늦게 입장한 사람이 '재생목록 전체 경과 시간'을 한 영상의 초 단위로 오해하지 않도록
+    // 시작 초 동기화는 개별 영상에만 적용합니다.
+    if (!isPlaylist){
+      if (state === 'paused' && typeof v.pausedPos === 'number'){
+        target = Math.max(0, Number(v.pausedPos || 0));
+      }else{
+        const startedAt = Number(v.startedAt || 0);
+        if (startedAt){
+          target = Math.max(0, (Date.now() - startedAt) / 1000);
+        }
       }
     }
 
-    // ✅ 같은 영상이면 'paused'에서 다시 로드하지 말기 (광고 재진입/지속 방지)
     let curId = '';
     try{
       const d = (typeof p.getVideoData === 'function') ? p.getVideoData() : null;
@@ -10417,24 +10435,43 @@ function applyRemoteBgm_(v, force){
         if (m && m[1]) curId = m[1];
       }catch(e){}
     }
-    const sameVideo = (curId && curId === vid);
 
-    if (!sameVideo){
-      try{
-        p.loadVideoById({ videoId: vid, startSeconds: target });
-      }catch(e){
-        // 구형 방식 fallback
-        p.loadVideoById(vid);
-        if (target) try{ p.seekTo(target, true); }catch(e2){}
-      }
-    }else{
-      // 같은 영상이면 위치만 살짝 보정(필요할 때만)
-      if (target){
+    const sameVideo = !isPlaylist && ytSourceMode_ === 'video' && curId && curId === source.videoId;
+    const samePlaylist = isPlaylist && ytSourceMode_ === 'playlist' && ytActivePlaylistId_ === source.playlistId;
+
+    if (!sameVideo && !samePlaylist){
+      if (isPlaylist){
         try{
-          const now = (typeof p.getCurrentTime === 'function') ? Number(p.getCurrentTime()||0) : 0;
-          if (Math.abs(now - target) > 0.8) p.seekTo(target, true);
-        }catch(e){}
+          p.loadPlaylist({
+            list: source.playlistId,
+            listType: 'playlist',
+            index: source.playlistIndex || 0,
+            startSeconds: 0
+          });
+        }catch(e){
+          // 구형 방식 fallback
+          p.loadPlaylist(source.playlistId, source.playlistIndex || 0, 0);
+        }
+        ytSourceMode_ = 'playlist';
+        ytActivePlaylistId_ = source.playlistId;
+        try{ setMiniTitle_(v.title || '유튜브 재생목록'); }catch(e){}
+      }else{
+        try{
+          p.loadVideoById({ videoId: source.videoId, startSeconds: target });
+        }catch(e){
+          // 구형 방식 fallback
+          p.loadVideoById(source.videoId);
+          if (target) try{ p.seekTo(target, true); }catch(e2){}
+        }
+        ytSourceMode_ = 'video';
+        ytActivePlaylistId_ = '';
       }
+    }else if (sameVideo && target){
+      // 같은 영상이면 위치만 살짝 보정(필요할 때만)
+      try{
+        const now = (typeof p.getCurrentTime === 'function') ? Number(p.getCurrentTime()||0) : 0;
+        if (Math.abs(now - target) > 0.8) p.seekTo(target, true);
+      }catch(e){}
     }
 
     if (state === 'paused'){
@@ -10449,7 +10486,7 @@ function applyRemoteBgm_(v, force){
         try{ p.unMute(); }catch(e){}
         try{ p.setVolume(vol); }catch(e){}
       }, 250);
-      setBgmState('같이 듣는 중' + who);
+      setBgmState(isPlaylist ? '재생목록 같이 듣는 중' + who : '같이 듣는 중' + who);
       // ✅ 1초 뒤에도 소리가 안 나면(뮤트/정책) 사용자가 '소리 켜기'를 눌러 해결하도록 안내
       setTimeout(()=>{
         try{
@@ -10473,6 +10510,7 @@ function applyRemoteBgm_(v, force){
 
     }
   }catch(e){
+    console.warn('applyRemoteBgm failed', e);
     setBgmState('재생 실패');
   }
 }
@@ -10480,6 +10518,96 @@ function applyRemoteBgm_(v, force){
 // =====================
   // BGM (YouTube)
   // =====================
+  // ✅ 재생목록 주소도 영상 주소처럼 다룹니다.
+  // - https://www.youtube.com/playlist?list=PL...
+  // - https://www.youtube.com/watch?v=VIDEOID&list=PL...
+  // - https://youtu.be/VIDEOID?list=PL...
+  function parseYouTubePlaylistInfo(url){
+    const raw = String(url || '').replace(/&amp;/g, '&').replace(/[<>]/g, '').trim();
+    if (!raw) return null;
+
+    let playlistId = '';
+    let index = 0;
+
+    try{
+      const candidate = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : ('https://' + raw);
+      const u = new URL(candidate);
+      playlistId = String(u.searchParams.get('list') || '').trim();
+      const rawIndex = Number(u.searchParams.get('index') || 0);
+      // YouTube 공유 URL의 index는 1부터 시작하므로 API용 0-based index로 변환
+      if (Number.isFinite(rawIndex) && rawIndex > 0) index = Math.max(0, Math.floor(rawIndex) - 1);
+    }catch(e){
+      const m = raw.match(/[?&]list=([^&#\s]+)/i);
+      if (m && m[1]){
+        try{ playlistId = decodeURIComponent(m[1]); }catch(_){ playlistId = m[1]; }
+      }
+      const mi = raw.match(/[?&]index=(\d+)/i);
+      if (mi && mi[1]) index = Math.max(0, Number(mi[1]) - 1);
+    }
+
+    // 일반 공유 재생목록 ID(PL/UU/LL/RD/OLAK5uy 등)를 넉넉하게 허용
+    if (!/^[A-Za-z0-9_-]{8,200}$/.test(playlistId)) return null;
+    return { playlistId, playlistIndex: index };
+  }
+
+  function parseYouTubeSource(url){
+    const cleanUrl = String(url || '').trim();
+    if (!cleanUrl) return null;
+
+    // list=가 있는 주소는 항상 재생목록으로 처리합니다.
+    const pl = parseYouTubePlaylistInfo(cleanUrl);
+    if (pl){
+      return {
+        kind: 'yt_playlist',
+        url: cleanUrl,
+        playlistId: pl.playlistId,
+        playlistIndex: pl.playlistIndex
+      };
+    }
+
+    const videoId = parseYouTubeId(cleanUrl);
+    if (!videoId) return null;
+    return { kind:'yt', url: cleanUrl, videoId };
+  }
+
+  function getYouTubeSource_(value){
+    const v = value && typeof value === 'object' ? value : { url: value };
+    const url = String(v.url || '').trim();
+    const kind = String(v.kind || 'yt');
+    const fromUrl = parseYouTubeSource(url);
+
+    if (kind === 'yt_playlist' || v.playlistId || fromUrl?.kind === 'yt_playlist'){
+      const pl = parseYouTubePlaylistInfo(url);
+      const playlistId = String(v.playlistId || pl?.playlistId || '').trim();
+      const idxRaw = (v.playlistIndex ?? pl?.playlistIndex ?? 0);
+      const playlistIndex = Number.isFinite(Number(idxRaw)) ? Math.max(0, Math.floor(Number(idxRaw))) : 0;
+      if (playlistId){
+        return { kind:'yt_playlist', url, playlistId, playlistIndex };
+      }
+    }
+
+    const videoId = String(v.videoId || fromUrl?.videoId || parseYouTubeId(url) || '').trim();
+    if (!videoId) return null;
+    return { kind:'yt', url, videoId };
+  }
+
+  function sourcePayload_(source){
+    if (!source) return {};
+    if (source.kind === 'yt_playlist'){
+      return {
+        kind: 'yt_playlist',
+        url: String(source.url || ''),
+        playlistId: String(source.playlistId || ''),
+        playlistIndex: Number.isFinite(Number(source.playlistIndex)) ? Math.max(0, Math.floor(Number(source.playlistIndex))) : 0
+      };
+    }
+    return {
+      kind: 'yt',
+      url: String(source.url || ''),
+      videoId: String(source.videoId || '')
+    };
+  }
+
   function parseYouTubeId(url){
     const s0 = String(url || '').trim();
     if (!s0) return '';
@@ -10515,6 +10643,42 @@ function applyRemoteBgm_(v, force){
   // ✅ 재생목록 자동 재생 (DJ만 실행)
   function onYtEnded_(){
     try{
+      // 유튜브 '재생목록'은 곡이 끝날 때 자체적으로 다음 영상으로 넘어갑니다.
+      // 짧게 기다려 실제로 목록 전체가 끝났는지 확인한 뒤에만 DJ 목록을 넘깁니다.
+      if (ytSourceMode_ === 'playlist'){
+        try{ if (ytPlaylistEndTimer_) clearTimeout(ytPlaylistEndTimer_); }catch(e){}
+        ytPlaylistEndTimer_ = setTimeout(()=>{
+          try{
+            const p = ytPlayer;
+            const stillEnded = !!p && typeof p.getPlayerState === 'function' && p.getPlayerState() === 0;
+            if (!stillEnded) return; // 유튜브가 다음 곡으로 정상 전환한 경우
+
+            if (playingFromPlaylist_){
+              // 외부 DJ 목록의 한 항목으로 넣은 재생목록이 모두 끝난 경우 다음 항목으로
+              if (isDj_()) plPrevNext_(+1);
+              return;
+            }
+
+            // 입력창에서 직접 튼 재생목록은 마지막 곡 뒤에 처음부터 반복
+            const source = getYouTubeSource_(bgmRemote_);
+            if (source?.kind === 'yt_playlist' && p){
+              try{
+                p.loadPlaylist({
+                  list: source.playlistId,
+                  listType: 'playlist',
+                  index: source.playlistIndex || 0,
+                  startSeconds: 0
+                });
+              }catch(e){
+                try{ p.loadPlaylist(source.playlistId, source.playlistIndex || 0, 0); }catch(_){}
+              }
+              try{ p.playVideo(); }catch(e){}
+            }
+          }catch(e){}
+        }, 900);
+        return;
+      }
+
       // 재생목록 자동 넘김은 DJ만
       if (playingFromPlaylist_){
         if (!isDj_()) return;
@@ -10537,9 +10701,9 @@ function applyRemoteBgm_(v, force){
   playingFromPlaylist_ = false;
 
   const url = $('bgmUrl').value;
-  const vid = parseYouTubeId(url);
-  if (!vid){
-    alert('유튜브 링크에서 영상 ID를 못 찾았어. 링크를 한 번만 더 확인해줘!');
+  const source = parseYouTubeSource(url);
+  if (!source){
+    alert('유튜브 영상 또는 재생목록 링크를 확인해줘!');
     return;
   }
 
@@ -10569,9 +10733,18 @@ DJ만 노래를 틀/바꿀 수 있어!`);
 
   const startedAt = Date.now();
 
+  const sharedPayload = {
+    ...sourcePayload_(source),
+    fromPlaylist: false,
+    startedAt,
+    pausedPos: null,
+    by: myName().slice(0,12),
+    state: 'playing'
+  };
+
   // Local immediate apply (gesture-safe)
   try{
-    applyRemoteBgm_({ kind:'yt', url, videoId: vid, startedAt, by: myName().slice(0,12), state:'playing', fromPlaylist:false }, true);
+    applyRemoteBgm_(sharedPayload, true);
   }catch(e){
     console.warn(e);
   }
@@ -10581,16 +10754,7 @@ DJ만 노래를 틀/바꿀 수 있어!`);
     try{
       await window.FB.ensureAnonAuth();
       const bgmRef = window.FB.ref(window.FB.db, fbBgmPath_(sessionId));
-      await window.FB.set(bgmRef, {
-        kind: 'yt',
-        fromPlaylist: false,
-        url,
-        videoId: vid,
-        startedAt,
-        pausedPos: null,
-        by: myName().slice(0,12),
-        state: 'playing'
-      });
+      await window.FB.set(bgmRef, sharedPayload);
       // (노래 재생 알림은 채팅 상단 이펙트로 표시)
     }catch(e){
       console.warn('bgm set failed', e);
@@ -10733,9 +10897,13 @@ DJ만 노래를 틀/바꿀 수 있어!`);
     payload.title = String(track.title || track.fileName || 'MP3');
     payload.url = payload.fileUrl;
   }else{
-    payload.url = String(track.url || '');
-    payload.videoId = String(track.videoId || parseYouTubeId(payload.url) || '');
-    payload.title = String(track.title || '');
+    const source = getYouTubeSource_(track);
+    if (!source){
+      showOverlay('재생 실패', '유튜브 영상 또는 재생목록 링크를 확인해줘!');
+      return;
+    }
+    Object.assign(payload, sourcePayload_(source));
+    payload.title = String(track.title || (source.kind === 'yt_playlist' ? '유튜브 재생목록' : ''));
   }
 
   try{
@@ -10816,6 +10984,8 @@ function normalizePlaylist_(pl){
 function trackLabel_(t){
   const kind = String(t?.kind || 'yt');
   if (kind === 'file') return `🎧 MP3 · ${t.fileName || t.title || 'MP3'}`;
+  const source = getYouTubeSource_(t);
+  if (source?.kind === 'yt_playlist') return `🎶 YT 재생목록 · ${t.title || '유튜브 재생목록'}`;
   return `🎵 YT · ${t.url || ''}`;
 }
 
@@ -10824,6 +10994,11 @@ function trackSub_(t){
   const by = t?.by ? ` · ${t.by}` : '';
   const note = t?.note ? ` · ${t.note}` : '';
   if (kind === 'file') return `${t.fileName || 'MP3'}${by}${note}`;
+  const source = getYouTubeSource_(t);
+  if (source?.kind === 'yt_playlist'){
+    const start = Number(source.playlistIndex || 0) + 1;
+    return `유튜브 재생목록 · ${start}번째부터${by}${note}`;
+  }
   return `${t.url || ''}${by}${note}`;
 }
 
@@ -10836,7 +11011,7 @@ function renderPlaylistUi_(){
   const items = pl.items || [];
   const cur = pl.curIndex || 0;
 
-  st.textContent = items.length ? `${items.length}곡 · 현재 ${cur+1}/${items.length}` : '비어있음';
+  st.textContent = items.length ? `${items.length}개 항목 · 현재 ${cur+1}/${items.length}` : '비어있음';
   try{ const b=$('btnPlShuffle'); if(b){ b.textContent = plShuffleMode_ ? '🔀 랜덤 ON' : '🔀 랜덤'; } }catch(e){}
 
 
@@ -11028,7 +11203,7 @@ function renderRequestsUi_(){
 
     const title = document.createElement('div');
     title.className = 'reqTitle';
-    title.textContent = (r.kind === 'file') ? `🎧 MP3 신청 · ${r.fileName || 'MP3'}` : `🎵 신청 · ${r.url || ''}`;
+    title.textContent = (r.kind === 'file') ? `🎧 MP3 신청 · ${r.fileName || 'MP3'}` : (getYouTubeSource_(r)?.kind === 'yt_playlist' ? `🎶 재생목록 신청 · ${r.url || ''}` : `🎵 신청 · ${r.url || ''}`);
 
     const sub = document.createElement('div');
     sub.className = 'reqSub';
@@ -11116,9 +11291,15 @@ async function deleteRequest_(key){
 async function approveRequest_(key, r){
   if (!isDj_()) return;
 
+  const source = getYouTubeSource_(r);
   const track = (r.kind === 'file')
     ? { kind:'file', fileUrl: r.fileUrl || r.url || '', fileName: r.fileName || 'MP3', title: r.fileName || 'MP3', note: r.note || '' }
-    : { kind:'yt', url: r.url || '', videoId: parseYouTubeId(r.url || ''), title:'', note: r.note || '' };
+    : (source ? { ...sourcePayload_(source), title: source.kind === 'yt_playlist' ? '유튜브 재생목록' : '', note: r.note || '' } : null);
+
+  if (!track){
+    showOverlay('승인 실패', '신청곡의 유튜브 영상/재생목록 링크를 확인할 수 없어요.');
+    return;
+  }
 
   await plAddTrack_(track);
   await deleteRequest_(key);
@@ -11128,30 +11309,27 @@ async function approveRequest_(key, r){
 // =====================
 // UI wiring for playlist/requests
 // =====================
+async function addBgmInputToPlaylist_(){
+  const url = ($('bgmUrl')?.value || '').trim();
+  const source = parseYouTubeSource(url);
+  if (!source){
+    showOverlay('추가 실패', '유튜브 영상 또는 재생목록 링크가 필요해요.');
+    return;
+  }
+  await plAddTrack_({
+    ...sourcePayload_(source),
+    title: source.kind === 'yt_playlist' ? '유튜브 재생목록' : ''
+  });
+}
+
 function wirePlaylistAndRequestsUi_(){
   // =====================
-  // DJ playlist (유튜브만)
+  // DJ playlist (유튜브 영상 + 재생목록)
   // =====================
-  $('btnPlAddYt')?.addEventListener('click', async ()=>{
-    const url = ($('bgmUrl')?.value || '').trim();
-    const vid = parseYouTubeId(url);
-    if (!vid){
-      showOverlay('추가 실패', '유튜브 링크가 필요해요. (BGM 입력창에 링크를 넣고 “DJ 재생목록에 추가”를 눌러줘)');
-      return;
-    }
-    await plAddTrack_({ kind:'yt', url, videoId: vid });
-  });
+  $('btnPlAddYt')?.addEventListener('click', addBgmInputToPlaylist_);
 
   // BGM 블록에서 바로 “목록추가” (가까워서 헷갈림 방지)
-  $('btnQuickPlAdd')?.addEventListener('click', async ()=>{
-    const url = ($('bgmUrl')?.value || '').trim();
-    const vid = parseYouTubeId(url);
-    if (!vid){
-      showOverlay('추가 실패', '유튜브 링크가 필요해요. (BGM 입력창에 링크를 넣고 “➕ DJ 재생목록에 추가”를 눌러줘)');
-      return;
-    }
-    await plAddTrack_({ kind:'yt', url, videoId: vid });
-  });
+  $('btnQuickPlAdd')?.addEventListener('click', addBgmInputToPlaylist_);
 
   $('btnPlPrev')?.addEventListener('click', ()=> plPrevNext_(-1));
   $('btnPlNext')?.addEventListener('click', ()=> plPrevNext_(+1));
@@ -11219,7 +11397,7 @@ function wirePlaylistAndRequestsUi_(){
     try{
       if (!bgmRemote_) return;
       $('bgmUrl').value = String(bgmRemote_.url || '');
-      showOverlay('복사 완료', '현재 재생 중인 링크를 입력창에 복사했어!');
+      showOverlay('복사 완료', getYouTubeSource_(bgmRemote_)?.kind === 'yt_playlist' ? '현재 재생 중인 재생목록 링크를 입력창에 복사했어!' : '현재 재생 중인 링크를 입력창에 복사했어!');
     }catch(e){}
   });
 
@@ -11233,12 +11411,12 @@ function wirePlaylistAndRequestsUi_(){
       showOverlay('신청 실패', '유튜브 링크를 넣어줘!');
       return;
     }
-    const vid = parseYouTubeId(url);
-    if (!vid){
-      showOverlay('신청 실패', '지금은 유튜브 링크만 신청 가능해!');
+    const source = parseYouTubeSource(url);
+    if (!source){
+      showOverlay('신청 실패', '유튜브 영상 또는 재생목록 링크만 신청할 수 있어!');
       return;
     }
-    await pushRequest_({ kind:'yt', url, note });
+    await pushRequest_({ ...sourcePayload_(source), note });
     try{ $('reqUrl').value = ''; }catch(e){}
     try{ $('reqNote').value = ''; }catch(e){}
   });
