@@ -2887,6 +2887,51 @@ body{
   }
 }
 </style>
+
+<!-- SUDA_COLLAPSED_BGM_ICON_V18: 모바일 접힌 헤더에도 BGM 상태 음표만 유지 -->
+<style id="sudaCollapsedBgmIconV18">
+@media (max-width:760px){
+  /* 접힌 헤더에서는 재생바 전체 대신, 기존 BGM 상태 버튼(🎵)만 작은 아이콘으로 남깁니다. */
+  body.tbCollapsed .miniBgmBar{
+    display:flex !important;
+    flex:0 0 34px !important;
+    width:34px !important;
+    min-width:34px !important;
+    max-width:34px !important;
+    height:34px !important;
+    min-height:34px !important;
+    padding:0 !important;
+    gap:0 !important;
+    overflow:visible !important;
+    border-radius:11px !important;
+    border:1px solid rgba(255,105,180,.22) !important;
+    background:rgba(255,255,255,.82) !important;
+    box-shadow:0 4px 12px rgba(0,0,0,.05) !important;
+  }
+  body.tbCollapsed .miniBgmBar .miniBgmTitle,
+  body.tbCollapsed .miniBgmBar .miniBgmBtns:last-child,
+  body.tbCollapsed .miniBgmBar .miniBgmBtns:first-child > :not(#miniNote){
+    display:none !important;
+  }
+  body.tbCollapsed .miniBgmBar .miniBgmBtns:first-child{
+    display:flex !important;
+    width:100% !important;
+    height:100% !important;
+    gap:0 !important;
+  }
+  body.tbCollapsed .miniBgmBar #miniNote{
+    display:flex !important;
+    width:34px !important;
+    min-width:34px !important;
+    height:34px !important;
+    padding:0 !important;
+    border:0 !important;
+    border-radius:11px !important;
+    background:transparent !important;
+    font-size:16px !important;
+  }
+}
+</style>
 </head>
 
 <body>
