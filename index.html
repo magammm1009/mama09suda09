@@ -12339,5 +12339,64 @@ document.addEventListener('click', (e)=>{
 })();
 </script>
 
+
+<!-- MAC_IME_SEND_FIX_V21_START -->
+<script>
+/*
+  macOS 한글/일본어 등 IME 조합 중 Enter 전송 안전 패치
+  - 조합 중 Enter는 기존 keydown 전송 리스너까지 도달하지 않게 막습니다.
+  - 조합이 끝난 뒤, 확정된 값만 한 번 전송합니다.
+  - 일반 Enter/Shift+Enter/사진 첨부 전송 로직은 기존 함수를 그대로 사용합니다.
+*/
+(function(){
+  function wireMacImeSendFix(){
+    const input = document.getElementById('msg');
+    if(!input || input.__macImeSendFixV21) return;
+    input.__macImeSendFixV21 = true;
+
+    let composing = false;
+    let sendAfterCommit = false;
+    let commitTimer = 0;
+
+    input.addEventListener('compositionstart', function(){
+      composing = true;
+      sendAfterCommit = false;
+      if(commitTimer){ clearTimeout(commitTimer); commitTimer = 0; }
+    }, true);
+
+    input.addEventListener('compositionend', function(){
+      composing = false;
+      if(!sendAfterCommit) return;
+      sendAfterCommit = false;
+      if(commitTimer) clearTimeout(commitTimer);
+      /* macOS 입력기는 compositionend 뒤 textarea value를 한 틱 늦게 확정할 수 있음 */
+      commitTimer = setTimeout(function(){
+        commitTimer = 0;
+        try{
+          if(typeof sendChat_ === 'function') sendChat_();
+        }catch(err){ console.warn('[mac ime send fix]', err); }
+      }, 0);
+    }, true);
+
+    input.addEventListener('keydown', function(e){
+      if(e.key !== 'Enter' || e.shiftKey) return;
+      const imeActive = composing || e.isComposing || e.keyCode === 229;
+      if(!imeActive) return;
+
+      /* 기존 bubbling keydown 리스너의 즉시 전송만 차단. 기본 동작은 남겨 조합 글자를 확정함. */
+      sendAfterCommit = true;
+      e.stopImmediatePropagation();
+    }, true);
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', wireMacImeSendFix, {once:true});
+  }else{
+    wireMacImeSendFix();
+  }
+})();
+</script>
+<!-- MAC_IME_SEND_FIX_V21_END -->
+
 </body>
 </html>
