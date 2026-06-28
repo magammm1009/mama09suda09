@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>💣Boom! v17</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY | SESSION_RESET_LOCK_V10 | ADMIN_AUTH_UI_V11 | REMOTE_PASSWORD_SETUP_V12 -->
-  <!-- YT_PLAYLIST_URL_SUPPORT_V17 -->
+  <title>💣Boom! v18</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY | SESSION_RESET_LOCK_V10 | ADMIN_AUTH_UI_V11 | REMOTE_PASSWORD_SETUP_V12 -->
+  <!-- YT_PLAYLIST_STABLE_PATCH_V18 -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
   <style>
     :root{
       --bg:#fff7fb;
       --card:#ffffff;
       --line:#f2d7ea;
-      --text:#2b2b2b;Firebase
+      --text:#2b2b2b;
       --muted:#777;
       --chatMsgPx: 15px; /* 채팅(메시지) 글씨 크기 */
     }
@@ -3039,7 +3039,7 @@ body{
           </div>
 
           <div class="hint" style="margin-top:10px;">
-            🎶 재생목록 주소에 <b>list=</b>가 들어 있으면 목록 전체를 재생해요. DJ 재생목록에서는 재생목록 하나가 한 항목으로 표시돼요.<br/>⚠️ 브라우저 정책 때문에 자동재생은 막혀서, 각자 “BGM 허용”을 한 번 눌러야 같이 들릴 수 있어요.
+            🎶 <b>재생목록 전체</b>는 <b>youtube.com/playlist?list=...</b> 링크를 넣어주세요. 일반 영상 링크에 자동으로 붙는 <b>list=</b>는 해당 곡 하나만 재생합니다.<br/>⚠️ 브라우저 정책 때문에 자동재생은 막혀서, 각자 “BGM 허용”을 한 번 눌러야 같이 들릴 수 있어요.
           </div>
         </div>
 
@@ -3795,7 +3795,10 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   // ✅ YouTube 재생목록 URL 지원: 현재 플레이어가 어떤 소스를 재생 중인지 추적
   let ytSourceMode_ = 'video'; // 'video' | 'playlist'
   let ytActivePlaylistId_ = '';
+  let ytActivePlaylistIndex_ = 0; // requested start index (0-based)
   let ytPlaylistEndTimer_ = null;
+  let ytIgnoreEndedUntil_ = 0; // ignore an old video's END event just after a source switch
+  let ytLastPlayerErrorAt_ = 0;
 
 
 // ✅ YouTube iframe_api 로딩 보강판 (콜백 누락/차단 대응)
@@ -3874,14 +3877,19 @@ window.onYouTubeIframeAPIReady = function(){
       box = document.createElement('div');
       box.id = 'yt_box';
       box.style.position = 'fixed';
-      box.style.left = '-9999px';
-      box.style.top = '0';
+      box.style.left = '-10000px';
+      box.style.top = '-10000px';
+      box.style.width = '200px';
+      box.style.height = '200px';
+      box.style.opacity = '0.001';
+      box.style.pointerEvents = 'none';
+      box.style.overflow = 'hidden';
       document.body.appendChild(box);
     }
 
     ytPlayer = new YT.Player('yt_box', {
-      height: '0',
-      width: '0',
+      height: '200',
+      width: '200',
       videoId: videoId || '',
       host: 'https://www.youtube.com',
       playerVars: { autoplay: 1, controls: 0, loop: 0, playsinline: 1, rel: 0, modestbranding: 1, origin: (location.origin && location.origin !== 'null') ? location.origin : ('https://' + location.host) },
@@ -3908,6 +3916,18 @@ window.onYouTubeIframeAPIReady = function(){
         onError: (e) => {
           // 2=invalid, 5=HTML5, 100=not found, 101/150=embed disabled
           const code = (e && typeof e.data !== 'undefined') ? e.data : '?';
+
+          // 재생목록 안의 일부 영상이 외부 재생을 막아도 목록 전체가 멈추지 않게 다음 곡을 시도합니다.
+          if (ytSourceMode_ === 'playlist' && ytPlayer && typeof ytPlayer.nextVideo === 'function'){
+            const now = Date.now();
+            if (now - ytLastPlayerErrorAt_ > 1200){
+              ytLastPlayerErrorAt_ = now;
+              setBgmState('제한된 곡 건너뛰는 중…');
+              try{ setTimeout(()=>{ try{ ytPlayer.nextVideo(); }catch(_e){} }, 0); }catch(_e){}
+              return;
+            }
+          }
+
           setBgmState('재생 불가(제한됨)');
           try{
             showOverlay(
@@ -3915,6 +3935,9 @@ window.onYouTubeIframeAPIReady = function(){
               '이 유튜브 영상은 외부 사이트에서 재생이 제한됐거나(101/150), 영상이 없거나(100), 링크가 잘못됐을 수 있어요.\n\n에러 코드: ' + code + '\n\n✅ 해결: 다른 유튜브 링크로 바꿔서 다시 시도해줘!'
             );
           }catch(err){}
+        },
+        onAutoplayBlocked: () => {
+          setBgmState('자동재생 차단됨(🎶 허용 필요)');
         }
       }
     });
@@ -10514,26 +10537,42 @@ function applyRemoteBgm_(v, force){
       }catch(e){}
     }
 
+    const requestedPlaylistIndex = Math.max(0, Number(source.playlistIndex || 0));
     const sameVideo = !isPlaylist && ytSourceMode_ === 'video' && curId && curId === source.videoId;
-    const samePlaylist = isPlaylist && ytSourceMode_ === 'playlist' && ytActivePlaylistId_ === source.playlistId;
+    const samePlaylist = isPlaylist
+      && ytSourceMode_ === 'playlist'
+      && ytActivePlaylistId_ === source.playlistId
+      && ytActivePlaylistIndex_ === requestedPlaylistIndex;
 
     if (!sameVideo && !samePlaylist){
+      // loadVideoById/loadPlaylist 직후 기존 영상의 늦은 ENDED 이벤트가 들어와도
+      // 다음 DJ 곡으로 한 번 더 넘어가지 않도록 짧게 차단합니다.
+      ytIgnoreEndedUntil_ = Date.now() + 900;
+      try{ if (ytPlaylistEndTimer_) clearTimeout(ytPlaylistEndTimer_); }catch(e){}
+      ytPlaylistEndTimer_ = null;
+
       if (isPlaylist){
+        // 직접 튼 유튜브 재생목록은 유튜브 자체 loop로 반복,
+        // DJ 재생목록 안의 재생목록은 마지막에서 외부 DJ 목록의 다음 항목으로 이동합니다.
+        try{ p.setLoop(!playingFromPlaylist_); }catch(e){}
         try{
           p.loadPlaylist({
             list: source.playlistId,
             listType: 'playlist',
-            index: source.playlistIndex || 0,
+            index: requestedPlaylistIndex,
             startSeconds: 0
           });
         }catch(e){
           // 구형 방식 fallback
-          p.loadPlaylist(source.playlistId, source.playlistIndex || 0, 0);
+          p.loadPlaylist(source.playlistId, requestedPlaylistIndex, 0);
         }
         ytSourceMode_ = 'playlist';
         ytActivePlaylistId_ = source.playlistId;
+        ytActivePlaylistIndex_ = requestedPlaylistIndex;
         try{ setMiniTitle_(v.title || '유튜브 재생목록'); }catch(e){}
       }else{
+        // playlist의 loop 설정은 다음 재생목록에도 남을 수 있으므로 단일곡으로 전환할 때 해제합니다.
+        try{ p.setLoop(false); }catch(e){}
         try{
           p.loadVideoById({ videoId: source.videoId, startSeconds: target });
         }catch(e){
@@ -10543,6 +10582,7 @@ function applyRemoteBgm_(v, force){
         }
         ytSourceMode_ = 'video';
         ytActivePlaylistId_ = '';
+        ytActivePlaylistIndex_ = 0;
       }
     }else if (sameVideo && target){
       // 같은 영상이면 위치만 살짝 보정(필요할 때만)
@@ -10632,8 +10672,16 @@ function applyRemoteBgm_(v, force){
     const cleanUrl = String(url || '').trim();
     if (!cleanUrl) return null;
 
-    // list=가 있는 주소는 항상 재생목록으로 처리합니다.
+    const videoId = parseYouTubeId(cleanUrl);
     const pl = parseYouTubePlaylistInfo(cleanUrl);
+
+    // 유튜브가 일반 영상 공유 링크에 자동으로 덧붙이는 list= / RD= 문맥은
+    // 재생목록 전체 재생으로 오인하지 않습니다. 실제 곡 링크(v=, youtu.be 등)는 곡 하나가 우선입니다.
+    // 재생목록 전체를 틀 때는 https://www.youtube.com/playlist?list=... 형태를 쓰면 됩니다.
+    if (videoId){
+      return { kind:'yt', url: cleanUrl, videoId };
+    }
+
     if (pl){
       return {
         kind: 'yt_playlist',
@@ -10643,9 +10691,7 @@ function applyRemoteBgm_(v, force){
       };
     }
 
-    const videoId = parseYouTubeId(cleanUrl);
-    if (!videoId) return null;
-    return { kind:'yt', url: cleanUrl, videoId };
+    return null;
   }
 
   function getYouTubeSource_(value){
@@ -10654,7 +10700,8 @@ function applyRemoteBgm_(v, force){
     const kind = String(v.kind || 'yt');
     const fromUrl = parseYouTubeSource(url);
 
-    if (kind === 'yt_playlist' || v.playlistId || fromUrl?.kind === 'yt_playlist'){
+    // 저장된 명시적 재생목록 레코드는 구버전 데이터까지 그대로 지원합니다.
+    if (kind === 'yt_playlist' || v.playlistId){
       const pl = parseYouTubePlaylistInfo(url);
       const playlistId = String(v.playlistId || pl?.playlistId || '').trim();
       const idxRaw = (v.playlistIndex ?? pl?.playlistIndex ?? 0);
@@ -10721,39 +10768,63 @@ function applyRemoteBgm_(v, force){
   // ✅ 재생목록 자동 재생 (DJ만 실행)
   function onYtEnded_(){
     try{
-      // 유튜브 '재생목록'은 곡이 끝날 때 자체적으로 다음 영상으로 넘어갑니다.
-      // 짧게 기다려 실제로 목록 전체가 끝났는지 확인한 뒤에만 DJ 목록을 넘깁니다.
+      // 소스 전환 직후의 늦은 ENDED 이벤트는 이전 곡에서 온 것이므로 무시합니다.
+      if (Date.now() < ytIgnoreEndedUntil_) return;
+
       if (ytSourceMode_ === 'playlist'){
+        const p = ytPlayer;
+        const source = getYouTubeSource_(bgmRemote_);
+        if (!p || source?.kind !== 'yt_playlist') return;
+
+        // 한 재생목록 안의 다음 곡 전환은 YouTube가 직접 처리합니다.
+        // 이전 코드는 0.9초 뒤 ENDED를 목록 종료로 오인해 매 곡마다 첫 곡부터 다시 loadPlaylist 했습니다.
+        // 여기서는 실제 마지막 인덱스에서만 외부 DJ 목록을 넘기거나, loop 실패 시에만 첫 곡으로 복구합니다.
         try{ if (ytPlaylistEndTimer_) clearTimeout(ytPlaylistEndTimer_); }catch(e){}
+        const expectedPlaylistId = source.playlistId;
+        const expectedStartedAt = Number(bgmRemote_?.startedAt || 0);
+
         ytPlaylistEndTimer_ = setTimeout(()=>{
           try{
-            const p = ytPlayer;
-            const stillEnded = !!p && typeof p.getPlayerState === 'function' && p.getPlayerState() === 0;
-            if (!stillEnded) return; // 유튜브가 다음 곡으로 정상 전환한 경우
+            if (Date.now() < ytIgnoreEndedUntil_) return;
+            if (ytSourceMode_ !== 'playlist' || ytActivePlaylistId_ !== expectedPlaylistId) return;
+            if (Number(bgmRemote_?.startedAt || 0) !== expectedStartedAt) return;
+
+            const state = (typeof p.getPlayerState === 'function') ? p.getPlayerState() : null;
+            if (state !== 0) return; // YouTube가 다음 곡을 정상적으로 시작했음
+
+            let list = [];
+            let index = -1;
+            try{ list = (typeof p.getPlaylist === 'function' && Array.isArray(p.getPlaylist())) ? p.getPlaylist() : []; }catch(e){}
+            try{ index = (typeof p.getPlaylistIndex === 'function') ? Number(p.getPlaylistIndex()) : -1; }catch(e){}
+            const atLastVideo = list.length > 0 && index >= (list.length - 1);
+
+            // 목록 중간이면 네트워크 지연/로딩 상태일 수 있으므로 강제 재로드하지 않습니다.
+            // 이 처리 덕분에 첫 곡으로 튀는 현상이 사라집니다.
+            if (!atLastVideo) return;
 
             if (playingFromPlaylist_){
-              // 외부 DJ 목록의 한 항목으로 넣은 재생목록이 모두 끝난 경우 다음 항목으로
+              // DJ 목록에 넣은 유튜브 재생목록이 완전히 끝났을 때만 다음 DJ 항목으로 이동
               if (isDj_()) plPrevNext_(+1);
               return;
             }
 
-            // 입력창에서 직접 튼 재생목록은 마지막 곡 뒤에 처음부터 반복
-            const source = getYouTubeSource_(bgmRemote_);
-            if (source?.kind === 'yt_playlist' && p){
-              try{
+            // 입력창에서 직접 연 재생목록은 setLoop(true)가 기본 처리합니다.
+            // 드물게 loop가 동작하지 않고 ENDED 상태에 남았을 때만 첫 선택 곡으로 복구합니다.
+            try{
+              if (typeof p.playVideoAt === 'function'){
+                p.playVideoAt(Math.max(0, Number(source.playlistIndex || 0)));
+              }else{
                 p.loadPlaylist({
                   list: source.playlistId,
                   listType: 'playlist',
-                  index: source.playlistIndex || 0,
+                  index: Math.max(0, Number(source.playlistIndex || 0)),
                   startSeconds: 0
                 });
-              }catch(e){
-                try{ p.loadPlaylist(source.playlistId, source.playlistIndex || 0, 0); }catch(_){}
               }
               try{ p.playVideo(); }catch(e){}
-            }
+            }catch(e){}
           }catch(e){}
-        }, 900);
+        }, 1800);
         return;
       }
 
@@ -10764,7 +10835,7 @@ function applyRemoteBgm_(v, force){
         return;
       }
 
-      // 일반 재생이면 모두가 로컬에서 같은 곡 반복(기존 loop 대체)
+      // 일반 단일곡은 기존처럼 반복 재생
       if (ytPlayer){
         try{ ytPlayer.seekTo(0, true); }catch(e){}
         try{ ytPlayer.playVideo(); }catch(e){}
