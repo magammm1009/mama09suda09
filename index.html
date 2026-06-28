@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
-  <title>💣Boom! v18</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY | SESSION_RESET_LOCK_V10 | ADMIN_AUTH_UI_V11 | REMOTE_PASSWORD_SETUP_V12 -->
+  <title>💣Boom! v20</title><!-- SUDA_HOST_GATE_V4_EXPLICIT_ONLY | SESSION_RESET_LOCK_V10 | ADMIN_AUTH_UI_V11 | REMOTE_PASSWORD_SETUP_V12 | ACID_RAIN_SAFE_V19 | SAFETY_HARDENING_V20 -->
   <!-- YT_PLAYLIST_STABLE_PATCH_V18 -->
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
   <style>
@@ -2440,6 +2440,8 @@ body{
       font-weight: 900;
     }
     .acidMiniNote{ font-size: 12px; color: var(--muted); font-weight: 800; }
+    /* v19: typing feedback stays local; it never creates a score/network event. */
+    #acidInput.acidPrefixMiss{ border-color: rgba(255, 120, 120, .72); background: rgba(255, 244, 244, .96); }
 
   
     /* ✅ (v3) 접속자 사이드 목록 제거 */
@@ -3992,6 +3994,7 @@ function openGameLink_(key){
 
   // Firebase chat/presence/notice
   let fbStarted = false;
+  let chatUnsub_ = null;
   let presenceStarted = false;
   let presenceTimer = null;
   let presenceUid = null;
@@ -4613,6 +4616,36 @@ if(!expAtMs || expAtMs < now){
     try{ stopTyping_(); }catch(e){}
     try { if (pingTimer) clearTimeout(pingTimer); } catch(e){}
     pingTimer = null;
+
+    // 세션 종료/폭파 뒤에도 실시간 구독·게임 타이머가 남아 UI를 갱신하지 않도록 정리.
+    const unsubs = [
+      chatUnsub_, presenceLiveUnsub, typingUnsub_, noticeUnsub_, djUnsub_, bgmUnsub_,
+      plUnsub_, reqUnsub_, raceCurUnsub_, racePlayersUnsub_, acidCurUnsub_, acidPlayersUnsub_,
+      rkUnsub_, wmPlayersUnsub_, wmStateUnsub_
+    ];
+    unsubs.forEach((fn)=>{ try{ if (typeof fn === 'function') fn(); }catch(e){} });
+    chatUnsub_ = null;
+    presenceLiveUnsub = null;
+    typingUnsub_ = null;
+    noticeUnsub_ = null;
+    djUnsub_ = null;
+    bgmUnsub_ = null;
+    plUnsub_ = null;
+    reqUnsub_ = null;
+    raceCurUnsub_ = null;
+    racePlayersUnsub_ = null;
+    acidCurUnsub_ = null;
+    acidPlayersUnsub_ = null;
+    rkUnsub_ = null;
+    wmPlayersUnsub_ = null;
+    wmStateUnsub_ = null;
+
+    try{ stopRaceTimer_(); }catch(e){}
+    try{ acidStopLoop_(); }catch(e){}
+    try{ if (wmDiceAnimTimer_) clearInterval(wmDiceAnimTimer_); }catch(e){}
+    wmDiceAnimTimer_ = null;
+    try{ if (ytPlaylistEndTimer_) clearTimeout(ytPlaylistEndTimer_); }catch(e){}
+    ytPlaylistEndTimer_ = null;
   }
 
   // =====================
@@ -4677,7 +4710,7 @@ initChat_(roomId);
     const root = window.FB.ref(window.FB.db, fbMessagesPath_(roomId));
     const q = window.FB.query(root, window.FB.limitToLast(200));
 
-    window.FB.onChildAdded(q, (snap)=>{
+    chatUnsub_ = window.FB.onChildAdded(q, (snap)=>{
       if (!snap.exists()) return;
       const m = snap.val() || {};
       appendMessage_(m);
@@ -4773,7 +4806,6 @@ if (cmd === '/완결'){
   const msg = sysLine_(`🎆 ${nm}님이 완결을 선언하셨습니다!`, extra);
   await pushSystem_(msg);
   await pushEvent_({ type:'event', event:'fireworks', kind:'complete', by:nm, ts: Date.now() });
-  launchFireworks_('complete', nm);
   return;
 }
 if (cmd === '/축하'){
@@ -4781,7 +4813,6 @@ if (cmd === '/축하'){
   const msg = sysLine_(`🎉 ${nm}님, 축하드립니다!`, extra);
   await pushSystem_(msg);
   await pushEvent_({ type:'event', event:'fireworks', kind:'race', by:nm, ts: Date.now() });
-  launchFireworks_('congrats', nm);
   return;
 }
 
@@ -4826,28 +4857,24 @@ if (cmd === '/하트'){
   msgEl.value = '';
   await pushSystem_(`💗 ${nm}님이 하트를 뿌리셨습니다!`);
   await pushEvent_({ type:'event', event:'fx', kind:'hearts', by:nm, ts: Date.now() });
-  launchFx_('hearts', nm);
   return;
 }
 if (cmd === '/반짝'){
   msgEl.value = '';
   await pushSystem_(`✨ ${nm}님이 반짝 이펙트를 사용하셨습니다!`);
   await pushEvent_({ type:'event', event:'fx', kind:'sparkles', by:nm, ts: Date.now() });
-  launchFx_('sparkles', nm);
   return;
 }
 if (cmd === '/눈꽃'){
   msgEl.value = '';
   await pushSystem_(`❄️ ${nm}님이 눈꽃을 뿌리셨습니다!`);
   await pushEvent_({ type:'event', event:'fx', kind:'snow', by:nm, ts: Date.now() });
-  launchFx_('snow', nm);
   return;
 }
 if (cmd === '/박수'){
   msgEl.value = '';
   await pushSystem_(`👏 ${nm}님이 박수를 보내셨습니다!`);
   await pushEvent_({ type:'event', event:'fx', kind:'clap', by:nm, ts: Date.now() });
-  launchFx_('clap', nm);
   return;
 }
 
@@ -6257,8 +6284,20 @@ async function celebrateRaceEnd_(){
     if (raceCelebratedId_ === rid) return;
     raceCelebratedId_ = rid;
 
+    // 각 브라우저의 상태 전환 감지는 모두 발생한다. 2·3등 이펙트는 한 클라이언트만
+    // 발행하도록 현재 게임에 원자적 발행 표시를 남긴다.
+    const curRef = window.FB.ref(window.FB.db, fbRaceCurrentPath_(sessionId));
+    const claim = await window.FB.runTransaction(curRef, (state)=>{
+      if (!state || String(state.id || '') !== rid || state.status !== 'ended' || state.podiumFxPublishedAt) return;
+      state.podiumFxPublishedAt = Date.now();
+      return state;
+    });
+    if (!claim || !claim.committed) return;
+
+    // 종료 직후의 마지막 점수도 반영되도록 RTDB에서 한 번만 읽어 확정 순위를 계산한다.
+    const playerSnap = await window.FB.get(window.FB.ref(window.FB.db, fbRacePlayersPath_(sessionId)));
+    const players = playerSnap && playerSnap.exists() ? (playerSnap.val() || {}) : {};
     const items = [];
-    const players = racePlayers_ || {};
     for (const puid of Object.keys(players)){
       const p = players[puid] || {};
       const nm = String(p.name || '익명').trim().slice(0,12);
@@ -6283,7 +6322,6 @@ async function celebrateRaceEnd_(){
     });
 
     const podium = items.filter(it=> it.done && it.mis===0).slice(0,3);
-    // 🥈🥉에게도 작은 축하(방 전체에 1회만)
     for (let i=1;i<Math.min(3, podium.length);i++){
       const by = podium[i].nm;
       try{ await pushEvent_({ type:'event', event:'fx2', kind:'confetti', by, ts: Date.now() }); }catch(e){}
@@ -6350,16 +6388,18 @@ function startRaceTimer_(){
         try{
           await window.FB.ensureAnonAuth();
           const root = window.FB.ref(window.FB.db, fbRacePath_(sessionId) + '/current');
-          await window.FB.runTransaction(root, (cur2)=>{
-            if (!cur2) return cur2;
-            if (cur2.status !== 'running') return cur2;
-            if (cur2.winnerUid) return cur2;
+          const res = await window.FB.runTransaction(root, (cur2)=>{
+            // unchanged value를 반환하면 여러 클라이언트가 모두 '성공'으로 볼 수 있어
+            // 종료 안내를 중복 전송할 수 있다. 이미 끝난 게임은 명시적으로 abort한다.
+            if (!cur2 || cur2.status !== 'running' || cur2.winnerUid) return;
             cur2.status = 'ended';
             cur2.endedReason = 'timeout';
             cur2.endedAt = Date.now();
             return cur2;
           });
-          await pushSystem_(`⏱️ 타이핑 레이스 시간 종료! (120초) — 이번 판은 우승자가 없어요.`);
+          if (res && res.committed){
+            await pushSystem_(`⏱️ 타이핑 레이스 시간 종료! (120초) — 이번 판은 우승자가 없어요.`);
+          }
         }catch(e){}
       })();
     }
@@ -6558,8 +6598,8 @@ async function trySetWinner_(uid, name, timeMs){
   try{
     const curRef = window.FB.ref(window.FB.db, fbRaceCurrentPath_(sessionId));
     const res = await window.FB.runTransaction(curRef, (cur)=>{
-      if (!cur || cur.status !== 'running') return cur;
-      if (cur.winnerUid) return cur;
+      // 이미 우승자가 정해진 경우 unchanged write가 아니라 abort해야 이펙트가 중복되지 않는다.
+      if (!cur || cur.status !== 'running' || cur.winnerUid) return;
       return Object.assign({}, cur, {
         status: 'ended',
         endedAt: Date.now(),
@@ -6574,8 +6614,8 @@ async function trySetWinner_(uid, name, timeMs){
       await pushSystem_(`🏆 ${String(name||'').slice(0,12)}님이 ⌨️ 타이핑 레이스 우승! (무실수 10문장, ${sec}s)`);
       // "엄청 화려하게" = fireworks + sparkles + boomup
       await pushEvent_({ type:'event', event:'fireworks', kind:'race', by:String(name||'').slice(0,12), ts: Date.now() });
-      await pushEvent_({ type:'event', event:'fx', name:'sparkle', by:String(name||'').slice(0,12), ts: Date.now() });
-      await pushEvent_({ type:'event', event:'fx', name:'boomup', by:String(name||'').slice(0,12), ts: Date.now() });
+      await pushEvent_({ type:'event', event:'fx', kind:'sparkle', by:String(name||'').slice(0,12), ts: Date.now() });
+      await pushEvent_({ type:'event', event:'fx', kind:'boomup', by:String(name||'').slice(0,12), ts: Date.now() });
     }
   }catch(e){}
 }
@@ -6613,15 +6653,9 @@ async function startRace_(diff){
 
     
 
-    // ✅ PATCH: immediately reflect running state locally so input enables right away
-    acidCur_ = cur;
-    acidPlayers_ = acidPlayers_ || {};
-    try{
-      const uid = myUid_();
-      if (uid){
-        acidPlayers_[uid] = acidPlayers_[uid] || { name: myName().slice(0,12) || '익명', score: 0, ts: Date.now() };
-      }
-    }catch(e){}
+    // 현재 레이스만 즉시 반영한다. (이전 코드의 acid* 상태 대입은 복사/붙여넣기 흔적)
+    raceCur_ = cur;
+    racePlayers_ = racePlayers_ || {};
 await pushSystem_(`🏁 ⌨️ 타이핑 레이스가 시작되었습니다! (난이도: ${raceDiffLabel_(d)}) — <무실수 10문장> 우승! ⏱️ 120초 제한 (이모지 자동 무시 / 기호는 그대로)`);
   }catch(e){
     showOverlay('오류', '레이스를 시작할 수 없어요. 잠시 후 다시 시도해 주세요.');
@@ -6695,7 +6729,7 @@ let acidPlayers_ = {};
 let acidCurUnsub_ = null;
 let acidPlayersUnsub_ = null;
 
-let acidUi_ = { open:false, raf: null, lastNow:0, schedule: [], active: new Map(), misses:0, hits:0, lastHudAt:0, lastStageMeasureAt:0, stageH:0 };
+let acidUi_ = { open:false, raf: null, lastNow:0, schedule: [], active: new Map(), misses:0, hits:0, lastHudAt:0, lastStageMeasureAt:0, stageH:0, endRequestedFor:'', submitUntil:0, lastPrefixOk:true };
 const ACID_LIMIT_MS_ = 120000;
 const ACID_SPAWN_MS_ = 900;
 const ACID_FALL_MS_  = 13000;
@@ -6995,68 +7029,65 @@ function acidBindUi_(){
   const stage = document.getElementById('acidStage');
   if (!stage) return;
 
-  // idempotent bind
+  // Overlay can be refreshed by score updates. Bind each freshly created stage once only.
   if (stage.__acidBound) return;
   stage.__acidBound = true;
 
   if (clear){
     clear.addEventListener('click', (e)=>{
       try{ e.preventDefault(); }catch(err){}
-      if (inp) inp.value = '';
+      if (inp){
+        inp.value = '';
+        inp.classList.remove('acidPrefixMiss');
+      }
       try{ inp?.focus(); }catch(err){}
     }, false);
   }
 
   if (inp){
-    // IME composition guard (Korean typing etc.)
+    // Korean/IME input must finish composing before Enter is treated as a submission.
     inp.__acidComposing = false;
     inp.addEventListener('compositionstart', ()=>{ inp.__acidComposing = true; }, false);
     inp.addEventListener('compositionend', ()=>{ inp.__acidComposing = false; }, false);
 
     inp.addEventListener('keydown', (e)=>{
+      const composing = !!(inp.__acidComposing || e.isComposing || e.keyCode === 229 || e.key === 'Process');
+      if (composing) return;
       if (e.key === 'Enter' || e.key === ' '){
         e.preventDefault();
         acidSubmit_();
       }
     }, false);
 
-    // ✅ Auto-clear on typo: if current input is not a prefix of any live word, wipe it + apply penalty
-    inp.addEventListener('input', (e)=>{
+    // Typing is local-only. The previous version wrote a score penalty to Firebase on every
+    // non-prefix character; with Korean IME this could create a stream of player updates while
+    // a word was being composed. Penalties are now applied only when the user actually submits.
+    inp.addEventListener('input', ()=>{
       try{
         if (inp.__acidComposing) return;
         const cur = acidCur_;
         if (!cur || cur.status !== 'running') return;
-        const vRaw = String(inp.value||'').trim();
-        if (!vRaw) return;
-
-        const v = acidNormAcid_(vRaw);
-        if (!v) return;
+        const typed = acidNormAcid_(String(inp.value||''));
+        if (!typed){
+          acidUi_.lastPrefixOk = true;
+          inp.classList.remove('acidPrefixMiss');
+          return;
+        }
 
         let okPrefix = false;
-        acidUi_.active.forEach((it, id)=>{
-          if (okPrefix) return;
-          if (!it || it.state !== 'live') return;
-          const tw = acidNormAcid_(String(it.w||''));
-          if (!tw) return;
-          if (tw.startsWith(v)) okPrefix = true;
+        acidUi_.active.forEach((it)=>{
+          if (okPrefix || !it || it.state !== 'live') return;
+          const target = acidNormAcid_(String(it.w||''));
+          if (target && target.startsWith(typed)) okPrefix = true;
         });
-
-        if (!okPrefix){
-          // typo -> clear and penalty
-          inp.value = '';
-          acidUi_.misses++;
-          try{ inp.classList.add('shake'); setTimeout(()=> inp.classList.remove('shake'), 260); }catch(err){}
-          // score penalty (clamped at >=0)
-          acidIncScore_(-1);
-        }
+        acidUi_.lastPrefixOk = okPrefix;
+        inp.classList.toggle('acidPrefixMiss', !okPrefix);
       }catch(err){}
     }, false);
   }
 
-  // focus
   try{ setTimeout(()=>{ try{ inp?.focus(); }catch(e){} }, 0); }catch(e){}
 }
-
 
 function acidStartLoop_(){
   if (acidUi_.raf) return;
@@ -7133,6 +7164,16 @@ function acidStartLoop_(){
     const endsAt = Number(cur.endsAt||0) || (startedAt + ACID_LIMIT_MS_);
     const remainMs = Math.max(0, endsAt - now);
 
+    // The old loop kept requesting an end transaction on every animation frame after 0 seconds.
+    // Stop locally first and make one atomic close attempt for this game only.
+    if (remainMs <= 0){
+      try{ document.getElementById('acidInput')?.setAttribute('disabled', 'disabled'); }catch(e){}
+      const gameId = String(cur.id || '');
+      acidStopLoop_();
+      acidTryEnd_(gameId);
+      return;
+    }
+
     // new game session -> reset local stage and spawn immediately
     const curKey = String(cur.id||'');
     if (acidUi_.schedKey !== curKey){
@@ -7145,6 +7186,9 @@ function acidStartLoop_(){
       acidUi_.stageH = 0;
       acidUi_.waveId = 0;
       acidUi_.nextEventAt = 0;
+      acidUi_.endRequestedFor = '';
+      acidUi_.submitUntil = 0;
+      acidUi_.lastPrefixOk = true;
       // 즉시 첫 웨이브 생성(게임 시작하자마자 단어 내려오기)
       spawnWave_(stage, cur, now);
       // 이벤트 단어는 4~8초 후 첫 등장
@@ -7195,11 +7239,6 @@ function acidStartLoop_(){
     // 웨이브 규칙: 화면(스테이지)에 보이는 단어가 전부 사라지면(=전부 클리어/미스) 다음 웨이브
     if (acidUi_.active.size === 0 && remainMs > 0){
       spawnWave_(stage, cur, now);
-    }
-
-    // time over → end
-    if (remainMs <= 0){
-      acidTryEnd_();
     }
 
     acidUi_.raf = requestAnimationFrame(tick);
@@ -7254,6 +7293,11 @@ function acidSubmit_(){
     const stage = document.getElementById('acidStage');
     if (!inp || !stage) return;
 
+    if (inp.__acidComposing) return;
+    const submitNow = Date.now();
+    if (submitNow < Number(acidUi_.submitUntil || 0)) return;
+    acidUi_.submitUntil = submitNow + 110;
+
     const raw = String(inp.value || '').trim();
     if (!raw) return;
 
@@ -7277,7 +7321,7 @@ function acidSubmit_(){
     if (matchId == null){
       // miss input feedback + auto-clear + penalty
       try{ inp.classList.add('shake'); setTimeout(()=> inp.classList.remove('shake'), 260); }catch(e){}
-      try{ inp.value = ''; }catch(e){}
+      try{ inp.value = ''; inp.classList.remove('acidPrefixMiss'); }catch(e){}
       acidUi_.misses++;
       // score penalty (clamped >=0)
       acidIncScore_(-1);
@@ -7297,6 +7341,7 @@ function acidSubmit_(){
     acidUi_.active.delete(matchId);
 
     inp.value = '';
+    try{ inp.classList.remove('acidPrefixMiss'); }catch(e){}
 
     // update my score in firebase
     acidIncScore_(pts);
@@ -7335,34 +7380,44 @@ async function acidIncScore_(delta){
   }catch(e){}
 }
 
-async function acidTryEnd_(){
+async function acidTryEnd_(expectedGameId){
+  const gameId = String(expectedGameId || acidCur_?.id || '');
+  if (!gameId || !sessionId) return;
+  if (acidUi_.endRequestedFor === gameId) return;
+  acidUi_.endRequestedFor = gameId;
+
   try{
     await window.FB.ensureAnonAuth();
     const curRef = window.FB.ref(window.FB.db, fbAcidCurrentPath_(sessionId));
     const res = await window.FB.runTransaction(curRef, (cur)=>{
-      if (!cur) return cur;
-      if (cur.status !== 'running') return cur;
-      // ensure time really over
+      // Returning undefined aborts the transaction. Returning the unchanged value can still be
+      // treated as committed by some SDK paths, which was the source of repeated finale events.
+      if (!cur || cur.status !== 'running') return;
+      if (String(cur.id || '') !== gameId) return;
       const endsAt = Number(cur.endsAt||0) || 0;
-      if (endsAt && Date.now() < endsAt) return cur;
-      cur.status = 'ended';
-      cur.endedAt = Date.now();
-      return cur;
+      if (!endsAt || Date.now() < endsAt) return;
+      return Object.assign({}, cur, { status:'ended', endedAt: Date.now() });
     });
 
+    // Only the client that actually changed running -> ended announces the result.
     if (res && res.committed){
       try{ await pushSystem_(`☔ 산성비 종료! (120초) — 점수판을 확인해 보세요 🎯`); }catch(e){}
-      try{ await acidPublishPodium_(); }catch(e){}
+      try{ await acidPublishPodium_(gameId); }catch(e){}
     }
-  }catch(e){}
+  }catch(e){
+    // A transient network failure may retry on the next render/refresh, but never in a frame loop.
+    if (acidUi_.endRequestedFor === gameId) acidUi_.endRequestedFor = '';
+  }
 }
 
-async function acidPublishPodium_(){
+async function acidPublishPodium_(expectedGameId){
   try{
     if (!sessionId) return;
+    const gameId = String(expectedGameId || acidCur_?.id || '');
+    if (!gameId) return;
     await window.FB.ensureAnonAuth();
 
-    // 1) read players once
+    // Read the final score table once.
     const plRef = window.FB.ref(window.FB.db, fbAcidPlayersPath_(sessionId));
     const snap = await window.FB.get(plRef);
     const players = (snap && snap.exists()) ? (snap.val() || {}) : {};
@@ -7375,44 +7430,37 @@ async function acidPublishPodium_(){
       const ts = Number(p.ts || 0) || 0;
       items.push({ uid:puid, nm, score, ts });
     }
-
-    // sort: score desc, ts asc(earlier first), name
     items.sort((a,b)=>{
       if (a.score !== b.score) return b.score - a.score;
       if (a.ts !== b.ts) return a.ts - b.ts;
       return a.nm.localeCompare(b.nm);
     });
-
     const top = items.slice(0,3);
 
-    // 2) claim "podium posted" atomically so it's broadcast once
+    // Claim the podium exactly once. Existing/other-game values abort instead of re-committing.
     const curRef = window.FB.ref(window.FB.db, fbAcidCurrentPath_(sessionId));
     const claim = await window.FB.runTransaction(curRef, (cur)=>{
-      if (!cur) return cur;
-      if (cur.podiumPostedAt) return cur; // already posted
-      cur.podiumPostedAt = Date.now();
-      cur.podium = top.map((t, i)=>({ rank:i+1, name:t.nm, score:t.score }));
-      return cur;
+      if (!cur || cur.status !== 'ended') return;
+      if (String(cur.id || '') !== gameId) return;
+      if (cur.podiumPostedAt) return;
+      return Object.assign({}, cur, {
+        podiumPostedAt: Date.now(),
+        podium: top.map((t, i)=>({ rank:i+1, name:t.nm, score:t.score }))
+      });
     });
-
     if (!claim || !claim.committed) return;
 
-    // 3) system message + fanfare
     const line = top.map((t,i)=> `${i+1}등 ${t.nm}(${t.score})`).join(' · ');
     const msg = top.length ? `🏆 산성비 결과 TOP${top.length}: ${line} 🎺🎉` : `🏆 산성비 결과: 참가자가 없었어요 😿`;
     try{ await pushSystem_(msg); }catch(e){}
 
-    // fireworks for #1 (or generic)
     const winner = top[0]?.nm || '';
     try{ await pushEvent_({ type:'event', event:'fireworks', kind:'acid', by:winner || (myName().slice(0,12)||'SYSTEM'), ts: Date.now() }); }catch(e){}
-
-    // small confetti for #2/#3
     for (let i=1;i<Math.min(3, top.length);i++){
       try{ await pushEvent_({ type:'event', event:'fx2', kind:'confetti', by: top[i].nm, ts: Date.now() }); }catch(e){}
     }
   }catch(e){}
 }
-
 
 async function startAcidRain_(){
   if (!sessionId) return;
@@ -7442,6 +7490,9 @@ async function startAcidRain_(){
     // local prep
     acidUi_.hits = 0;
     acidUi_.misses = 0;
+    acidUi_.endRequestedFor = '';
+    acidUi_.submitUntil = 0;
+    acidUi_.lastPrefixOk = true;
     acidUi_.schedule = buildAcidSchedule_(cur);
 
     await pushSystem_(`☔ ${cur.startedBy}님이 산성비를 시작했습니다! ⏱️ 120초 — 단어를 완벽하게 치고 Enter/Space!`);
@@ -7762,6 +7813,7 @@ let wmPlayers_ = {};
 let wmPlayersUnsub_ = null;
 let wmState_ = null;
 let wmStateUnsub_ = null;
+let wmResolveInFlight_ = false;
 
 function fbWMPath_(roomId){ return `rooms/${roomId}/games/writerMarble`; }
 function fbWMPlayersPath_(roomId){ return `${fbWMPath_(roomId)}/players`; }
@@ -8061,95 +8113,113 @@ async function wmRoll_(){
   });
 }
 
-function wmResolvePending_(){
-  if (!sessionId) return;
-  if (!wmState_ || !wmState_.pending || !wmState_.started || wmState_.ended) return;
-  const p = wmState_.pending;
-  const now = Date.now();
-  if (now < (p.resolveAt||0)) return;
+async function wmResolvePending_(){
+  if (wmResolveInFlight_) return;
+  if (!sessionId || !wmState_ || !wmState_.pending || !wmState_.started || wmState_.ended) return;
+  const preview = wmState_.pending;
+  if (Date.now() < Number(preview.resolveAt || 0)) return;
 
-  const sRef = window.FB.ref(window.FB.db, fbWMStatePath_(sessionId));
-  window.FB.runTransaction(sRef, (cur)=>{
-    cur = cur || wmDefaultState_();
-    if (!cur.started || cur.ended) return cur;
-    if (!cur.pending) return cur;
-    const pend = cur.pending;
-    if (Date.now() < (pend.resolveAt||0)) return cur;
+  const pid = String(preview.by || '');
+  if (!pid) return;
+  wmResolveInFlight_ = true;
 
-    const pid = pend.by;
-    const pl = (wmPlayers_||{})[pid];
-    if (!pl || pl.bankrupt){
-      cur.pending = null;
-      return cur;
-    }
+  try{
+    // 트랜잭션 안에서 setTimeout/update 같은 외부 부작용을 실행하면, 여러 브라우저와
+    // Firebase 재시도 횟수만큼 이동·돈·칸 효과가 중복될 수 있다. 먼저 플레이어 상태를
+    // 읽고, 상태 트랜잭션은 '한 번의 주사위 결과 확정'만 담당하게 분리한다.
+    const pRef = window.FB.ref(window.FB.db, `${fbWMPlayersPath_(sessionId)}/${pid}`);
+    const playerSnap = await window.FB.get(pRef);
+    const player = playerSnap && playerSnap.exists() ? (playerSnap.val() || null) : null;
+    const sRef = window.FB.ref(window.FB.db, fbWMStatePath_(sessionId));
 
-    const steps = pend.total || 0;
-    const from = pl.pos || 0;
-    let to = (from + steps) % 40;
-    let lapAdd = 0;
-    if (from + steps >= 40) lapAdd = Math.floor((from + steps)/40);
-    const newLap = (pl.lap||0) + lapAdd;
+    const res = await window.FB.runTransaction(sRef, (cur)=>{
+      if (!cur || !cur.started || cur.ended || !cur.pending) return;
+      const pend = cur.pending;
+      if (String(pend.by || '') !== pid || Date.now() < Number(pend.resolveAt || 0)) return;
 
-    // movement broadcast (for animation)
-    cur.lastMove = { uid: pid, from, to, steps, at: Date.now(), token: (pl.token||'🙂') };
-
-    // apply move (write player update outside transaction via queued update)
-    setTimeout(()=>{ try{
-      const pRef = window.FB.ref(window.FB.db, `${fbWMPlayersPath_(sessionId)}/${pid}`);
-      window.FB.update(pRef, { pos: to, lap: newLap });
-      if (lapAdd>0){
-        window.FB.update(pRef, { money: (pl.money||0) + (WM_PASS_START_BONUS_ * lapAdd) });
+      if (!player || player.bankrupt){
+        cur.pending = null;
+        return cur;
       }
-    }catch(e){} }, 0);
 
-    // log dice
-    const nm = pl.name || '누군가';
-    const arr = Array.isArray(cur.lastLog) ? cur.lastLog.slice(-10) : [];
-    arr.push({ts:Date.now(), msg:`🎲 ${nm}: ${pend.d1}+${pend.d2} = ${steps}`});
-    cur.lastLog = arr.slice(-12);
+      const steps = Number(pend.total || 0) || 0;
+      const from = Number(player.pos || 0) || 0;
+      const to = (from + steps) % 40;
+      const lapAdd = Math.floor((from + steps) / 40);
+      const newLap = (Number(player.lap || 0) || 0) + lapAdd;
+      const movedMoney = (Number(player.money || 0) || 0) + (WM_PASS_START_BONUS_ * lapAdd);
+      const nm = player.name || '누군가';
 
-    // land effect: compute using snapshot-ish (best effort)
-    const tile = WM_BOARD_[to] || null;
-    if (tile){
-      // resolve effects in microtask
-      setTimeout(()=>{ try{ wmApplyTileEffect_(pid, tile, cur.tiles||{}); }catch(e){} }, 0);
-    }
+      // movement broadcast + one-shot external application metadata
+      cur.lastMove = {
+        uid: pid, from, to, steps, lapAdd, newLap, movedMoney,
+        at: Date.now(), token: (player.token || '🙂'),
+        resolveKey: `${String(pend.startedAt || '')}:${pid}:${steps}`
+      };
 
-    // win check (10 laps)
-    if (newLap >= 10){
-      cur.ended = true;
-      cur.winner = pid;
-      cur.lastLog = (cur.lastLog||[]).concat([{ts:Date.now(), msg:`🏆 ${nm} 10바퀴 완주! 우승!`}]).slice(-12);
-    }
+      const arr = Array.isArray(cur.lastLog) ? cur.lastLog.slice(-10) : [];
+      arr.push({ts:Date.now(), msg:`🎲 ${nm}: ${pend.d1}+${pend.d2} = ${steps}`});
+      cur.lastLog = arr.slice(-12);
 
-    // advance turn (unless game ended)
-    if (!cur.ended){
-      const alive = (cur.turnOrder||[]).filter(id=>{
-        const pl2 = (wmPlayers_||{})[id];
-        return pl2 && !pl2.bankrupt;
-      });
-      if (alive.length <= 1){
+      if (newLap >= 10){
         cur.ended = true;
-        cur.winner = alive[0] || pid;
-      }else{
-        // rotate to next alive
-        const curId = (cur.turnOrder||[])[cur.turnIdx||0];
-        let idx = cur.turnIdx||0;
-        for (let k=0;k<alive.length+2;k++){
-          idx = (idx+1) % (cur.turnOrder||[]).length;
-          const nid = (cur.turnOrder||[])[idx];
-          const pl3 = (wmPlayers_||{})[nid];
-          if (pl3 && !pl3.bankrupt){
-            cur.turnIdx = idx;
-            break;
+        cur.winner = pid;
+        cur.lastLog = (cur.lastLog||[]).concat([{ts:Date.now(), msg:`🏆 ${nm} 10바퀴 완주! 우승!`}]).slice(-12);
+      }
+
+      if (!cur.ended){
+        const alive = (cur.turnOrder||[]).filter(id=>{
+          const pl2 = (wmPlayers_||{})[id];
+          return pl2 && !pl2.bankrupt;
+        });
+        if (alive.length <= 1){
+          cur.ended = true;
+          cur.winner = alive[0] || pid;
+        }else{
+          let idx = Number(cur.turnIdx || 0) || 0;
+          for (let k=0;k<alive.length+2;k++){
+            idx = (idx+1) % (cur.turnOrder||[]).length;
+            const nid = (cur.turnOrder||[])[idx];
+            const pl3 = (wmPlayers_||{})[nid];
+            if (pl3 && !pl3.bankrupt){
+              cur.turnIdx = idx;
+              break;
+            }
           }
         }
       }
-    }
 
-    cur.pending = null;
-    return cur;
-  });
+      cur.pending = null;
+      return cur;
+    });
+
+    // pending을 실제로 소비한 단 하나의 클라이언트만 외부 데이터(플레이어/칸 효과)를 적용한다.
+    if (!res || !res.committed || !player || player.bankrupt) return;
+    const finalState = res.snapshot && typeof res.snapshot.val === 'function' ? (res.snapshot.val() || {}) : {};
+    const move = finalState.lastMove || null;
+    if (!move || String(move.uid || '') !== pid) return;
+
+    const movedMoney = Number.isFinite(Number(move.movedMoney)) ? Number(move.movedMoney) : Number(player.money || 0);
+    await window.FB.update(pRef, {
+      pos: Number(move.to || 0),
+      lap: Number(move.newLap || player.lap || 0),
+      money: movedMoney
+    });
+
+    const tile = WM_BOARD_[Number(move.to || 0)] || null;
+    if (tile){
+      const movedPlayer = Object.assign({}, player, {
+        pos: Number(move.to || 0),
+        lap: Number(move.newLap || player.lap || 0),
+        money: movedMoney
+      });
+      await wmApplyTileEffect_(pid, tile, finalState.tiles || {}, movedPlayer);
+    }
+  }catch(e){
+    console.warn('writer marble pending resolve failed', e);
+  }finally{
+    wmResolveInFlight_ = false;
+  }
 }
 
 function wmTileKey_(pos){ return String(pos); }
@@ -8186,9 +8256,9 @@ function wmReleaseAllProps_(pid){
   }catch(e){}
 }
 
-function wmTryCoverDeficit_(pid, tilesState, reason){
+function wmTryCoverDeficit_(pid, tilesState, reason, playerOverride){
   try{
-    const pl = (wmPlayers_||{})[pid];
+    const pl = playerOverride || (wmPlayers_||{})[pid];
     if (!pl || pl.bankrupt) return;
     let money = Number(pl.money||0);
     if (money >= 0) return;
@@ -8246,8 +8316,8 @@ function wmTryCoverDeficit_(pid, tilesState, reason){
   }catch(e){}
 }
 
-function wmApplyTileEffect_(pid, tile, tilesState){
-  const pl = (wmPlayers_||{})[pid];
+function wmApplyTileEffect_(pid, tile, tilesState, playerOverride){
+  const pl = playerOverride || (wmPlayers_||{})[pid];
   if (!pl || pl.bankrupt) return;
 
   const pRef = window.FB.ref(window.FB.db, `${fbWMPlayersPath_(sessionId)}/${pid}`);
@@ -8259,7 +8329,7 @@ function wmApplyTileEffect_(pid, tile, tilesState){
     const nmoney = money + delta;
     window.FB.update(pRef, { money: nmoney });
     wmAddLog_(`🧾 ${nm} 세금 ${-delta}자`);
-    if (nmoney < 0) wmTryCoverDeficit_(pid, tilesState, '세금으로 파산');
+    if (nmoney < 0) wmTryCoverDeficit_(pid, tilesState, '세금으로 파산', Object.assign({}, pl, { money:nmoney }));
     return;
   }
   if (tile.type === 'chance'){
@@ -8276,7 +8346,7 @@ function wmApplyTileEffect_(pid, tile, tilesState){
     const nmoney = money + ev.d;
     window.FB.update(pRef, { money: nmoney });
     wmAddLog_(`🎁 ${nm} ${ev.t}`);
-    if (nmoney < 0) wmTryCoverDeficit_(pid, tilesState, '포춘으로 파산');
+    if (nmoney < 0) wmTryCoverDeficit_(pid, tilesState, '포춘으로 파산', Object.assign({}, pl, { money:nmoney }));
     return;
   }
   if (tile.type === 'loan'){
