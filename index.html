@@ -3275,15 +3275,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     getStorage, ref as sRef, uploadBytesResumable, getDownloadURL, deleteObject
   } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-storage.js";
 
-  // ✅ boomboom1009-ae518 (네 값으로 교체 완료)
+  // ✅ boomboom-1919 (데이터 서버 이사 완료)
+  // 📦 2026-09-10: boomboom1009-ae518 → boomboom-1919 로 옮겼습니다.
+  //    ⚠️ 메인 작업방(index.html의 sudaFirebaseConfig)과 반드시 같은 프로젝트를 봐야 합니다.
+  //       한쪽만 바뀌면 티켓을 쓰는 DB와 찾는 DB가 갈려서 아무도 입장하지 못합니다.
+  //    ⚠️ Storage 버킷도 함께 바뀝니다 — 옛 프로젝트에 올라간 지난 이미지·BGM은
+  //       옛 버킷 주소를 그대로 가리키므로, 옛 프로젝트를 지우면 그 링크들이 깨집니다.
   const firebaseConfig = {
-    apiKey: "AIzaSyAQYp8_sfgHMnH7KsTOdGgpMc1niarZiSs",
-    authDomain: "boomboom1009-ae518.firebaseapp.com",
-    databaseURL: "https://boomboom1009-ae518-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "boomboom1009-ae518",
-    storageBucket: "boomboom1009-ae518.firebasestorage.app",
-    messagingSenderId: "954818391824",
-    appId: "1:954818391824:web:477eb52436aafdb5d67f95"
+    apiKey: "AIzaSyBX1RbpOyqs5j5VGDgWyu6OmU5MHsSFRMI",
+    authDomain: "boomboom-1919.firebaseapp.com",
+    databaseURL: "https://boomboom-1919-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "boomboom-1919",
+    storageBucket: "boomboom-1919.firebasestorage.app",
+    messagingSenderId: "580934515622",
+    appId: "1:580934515622:web:efa98367d1f9c8e4e1ed67"
   };
 
   // ✅ v13: 메인 작업방은 BoomBoom Firebase를 'sudaApp' 보조 앱 이름으로 초기화합니다.
