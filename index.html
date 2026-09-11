@@ -3372,8 +3372,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
   // =====================
   const CHAT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
   const CHAT_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/gif";
-  const CHAT_IMAGE_MAX_DIMENSION = 1440;
-  const CHAT_IMAGE_QUALITY = 0.78;
+  const CHAT_IMAGE_MAX_DIMENSION = 1280;
+  const CHAT_IMAGE_QUALITY = 0.72;
 
   let pendingDriveImage_ = null; // 기존 메시지 전송 흐름 호환용 이름
   let pendingLocalImage_ = null;
@@ -3581,6 +3581,26 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
       img.src = objectUrl;
     });
   }
+  function closeImageBitmap_(img){
+    // ImageBitmap은 GC를 기다리지 않고 직접 풀어 줘야 메모리가 바로 회수됩니다.
+    try{ if(img && typeof img.close === "function") img.close(); }catch(_e){}
+  }
+  // v10: createImageBitmap은 디코딩을 메인 스레드 밖에서 처리해 준비가 빠르고 화면이 덜 멈춥니다.
+  // - resizeWidth/resizeHeight 옵션은 Safari가 무시해 기기마다 결과 크기가 달라지므로 쓰지 않습니다.
+  //   크기 조절은 예전처럼 canvas drawImage에서만 합니다.
+  // - imageOrientation:"from-image"로 <img> 경로와 EXIF 회전 결과를 맞춥니다(옵션을 모르는 브라우저는 무시).
+  // - 지원하지 않거나 실패하면 기존 <img> 경로(loadImageForUpload_)로 그대로 떨어집니다.
+  async function decodeImageForUpload_(file){
+    if(typeof createImageBitmap === "function"){
+      let bitmap = null;
+      try{
+        bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+      }catch(_e){ bitmap = null; }
+      if(bitmap && Number(bitmap.width || 0) > 0 && Number(bitmap.height || 0) > 0) return bitmap;
+      closeImageBitmap_(bitmap);
+    }
+    return await loadImageForUpload_(file);
+  }
   function canvasToBlob_(canvas, type, quality){
     return new Promise((resolve)=>{
       try{ canvas.toBlob((blob)=>resolve(blob || null), type, quality); }catch(e){ resolve(null); }
@@ -3606,41 +3626,46 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
     if(!/^image\/(jpeg|png|webp)$/.test(rawType)) return original;
 
     let img = null;
-    try{ img = await loadImageForUpload_(file); }catch(e){ return original; }
-    const width = Math.max(1, Number(img.naturalWidth || img.width || 1));
-    const height = Math.max(1, Number(img.naturalHeight || img.height || 1));
-    const scale = Math.min(1, CHAT_IMAGE_MAX_DIMENSION / Math.max(width, height));
-    const targetW = Math.max(1, Math.round(width * scale));
-    const targetH = Math.max(1, Math.round(height * scale));
-    // 작은 사진은 다시 그리지 않고 바로 올려 준비 시간을 줄입니다.
-    if(scale === 1 && Number(file.size || 0) <= 1500 * 1024) return original;
+    try{ img = await decodeImageForUpload_(file); }catch(e){ return original; }
+    try{
+      const width = Math.max(1, Number(img.naturalWidth || img.width || 1));
+      const height = Math.max(1, Number(img.naturalHeight || img.height || 1));
+      const scale = Math.min(1, CHAT_IMAGE_MAX_DIMENSION / Math.max(width, height));
+      const targetW = Math.max(1, Math.round(width * scale));
+      const targetH = Math.max(1, Math.round(height * scale));
+      // 작은 사진은 다시 그리지 않고 바로 올려 준비 시간을 줄입니다.
+      if(scale === 1 && Number(file.size || 0) <= 1500 * 1024) return original;
 
-    const canvas = document.createElement("canvas");
-    canvas.width = targetW;
-    canvas.height = targetH;
-    const ctx = canvas.getContext("2d", { alpha: rawType !== "image/jpeg" });
-    if(!ctx) return original;
-    if(rawType === "image/jpeg"){
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, targetW, targetH);
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d", { alpha: rawType !== "image/jpeg" });
+      if(!ctx) return original;
+      if(rawType === "image/jpeg"){
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, targetW, targetH);
+      }
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+      const outType = rawType === "image/jpeg" ? "image/jpeg" : "image/webp";
+      const blob = await canvasToBlob_(canvas, outType, CHAT_IMAGE_QUALITY);
+      if(!blob || !blob.size || blob.size >= file.size) return original;
+
+      const optimizedFile = new File([blob], uploadFileName_(file, outType), {
+        type: outType,
+        lastModified: Date.now()
+      });
+      return {
+        file: optimizedFile,
+        mimeType: outType,
+        size: optimizedFile.size,
+        optimized: true,
+        originalSize: Number(file.size || 0),
+        note: `${targetW}×${targetH}`
+      };
+    }finally{
+      // 성공·중도 반환·예외 어느 경로로 빠져나가도 비트맵을 반드시 풀어 줍니다.
+      closeImageBitmap_(img);
     }
-    ctx.drawImage(img, 0, 0, targetW, targetH);
-    const outType = rawType === "image/jpeg" ? "image/jpeg" : "image/webp";
-    const blob = await canvasToBlob_(canvas, outType, CHAT_IMAGE_QUALITY);
-    if(!blob || !blob.size || blob.size >= file.size) return original;
-
-    const optimizedFile = new File([blob], uploadFileName_(file, outType), {
-      type: outType,
-      lastModified: Date.now()
-    });
-    return {
-      file: optimizedFile,
-      mimeType: outType,
-      size: optimizedFile.size,
-      optimized: true,
-      originalSize: Number(file.size || 0),
-      note: `${targetW}×${targetH}`
-    };
   }
   function explainStorageUploadError_(err){
     const code = String(err?.code || "");
@@ -12662,6 +12687,36 @@ document.addEventListener('click', (e)=>{
 }
 </style>
 <!-- /SUDA_NICKNAME_EDITABLE_SAFE_V21 -->
+
+<!-- SUDA_CHAT_SCROLLBAR_V22 -->
+<style id="sudaChatScrollbarV22">
+/* 채팅 스크롤바의 '생김새와 자리'만 바꿉니다. overflow / height / flex 는 건드리지 않습니다.
+   - scrollbar-gutter:stable 로 스크롤바 자리를 미리 비워, 오른쪽 정렬된 '내 말풍선'이 가려지지 않게 합니다.
+   - macOS 오버레이 스크롤바는 자리를 차지하지 않아 gutter 만으로는 가림이 사라지지 않습니다.
+     ::-webkit-scrollbar 를 지정해야 '자리를 차지하는' 얇은 스크롤바로 바뀝니다.
+   - 모바일은 기본 오버레이 스크롤바가 이미 얇고 자동으로 숨으므로 그대로 둡니다. */
+@media (min-width: 761px){
+  #log{ scrollbar-gutter: stable; }
+  #log::-webkit-scrollbar{ width: 10px; }
+  #log::-webkit-scrollbar-track{ background: transparent; }
+  #log::-webkit-scrollbar-thumb{
+    background-color: rgba(255,105,180,.34);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  #log::-webkit-scrollbar-thumb:hover{ background-color: rgba(255,105,180,.58); }
+  #log::-webkit-scrollbar-corner{ background: transparent; }
+
+  /* Firefox 처럼 ::-webkit-scrollbar 를 지원하지 않는 브라우저 전용입니다.
+     ⚠️ scrollbar-width 를 Chrome 에도 적용하면 Chrome 이 위 ::-webkit-scrollbar 규칙을 통째로 무시하고
+        다시 오버레이 스크롤바로 돌아가 말풍선 가림이 되살아납니다. 반드시 @supports 로 격리합니다. */
+  @supports not selector(::-webkit-scrollbar){
+    #log{ scrollbar-width: thin; scrollbar-color: rgba(255,105,180,.45) transparent; }
+  }
+}
+</style>
+<!-- /SUDA_CHAT_SCROLLBAR_V22 -->
 
 </body>
 </html>
