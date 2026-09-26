@@ -642,6 +642,8 @@ body.suda-page{height:100%; overflow:hidden; overscroll-behavior:none}
 .suda-gate-msg{max-width:340px; margin:0; font-size:13px; font-weight:500; line-height:1.6; color:var(--w-text2); word-break:keep-all; overflow-wrap:anywhere; text-wrap:balance}
 .suda-gate .mkw-btn{margin-top:4px; text-decoration:none}
 .suda-gate-small{font-size:11.5px; font-weight:500; color:var(--w-text3)}
+.suda-gate-admin{margin-top:-2px; font-size:12px; font-weight:600; color:var(--w-text3)}
+.suda-gate-admin .mkIc{width:14px; height:14px}
 /* 폭파 순간: 큰 폭탄(선 아이콘 64px) + 겹 고리 */
 .suda-gate[data-gate="boom"] .suda-gate-ic{width:104px; height:104px; margin-bottom:22px; background:var(--w-acc-soft); color:var(--w-acc-text); box-shadow:0 0 0 12px var(--w-acc-soft), 0 0 0 26px var(--w-surface); animation:suda-boom-in .42s ease-out}
 .suda-gate[data-gate="boom"] .suda-gate-ic .mkIc{width:64px; height:64px; stroke-width:1.5}
@@ -2224,6 +2226,8 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
       <p class="suda-gate-msg" id="sudaGateMsg"></p>
       <button type="button" class="mkw-btn is-primary is-pill" id="sudaGateGo" hidden><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-suda"></use></svg>새 방으로</button>
       <a class="mkw-btn is-primary is-pill" id="sudaGateHome" href="https://magammm1009.github.io/makkeutma__room/index.html" rel="noopener"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-home"></use></svg>작업방으로</a>
+      <!-- 준비 중(wait)에만: 방장이 새 브라우저라 오늘 방을 못 여는 경우의 입구(설정 카드 '관리자 로그인'과 같은 인증·복구) — 방장이 아니면 비밀번호를 몰라 무해 -->
+      <button type="button" class="mkw-btn is-ghost is-sm suda-gate-admin" id="sudaGateAdmin" hidden><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-key"></use></svg>방장이세요? 관리자 로그인</button>
       <small class="suda-gate-small" id="sudaGateSmall" hidden></small>
     </div>
   </div>
@@ -3506,6 +3510,8 @@ function escapeHtml(s){
     }
 
     // 오늘 세션이 아직 없거나 날짜가 바뀐 경우에는 방장만 새 세션을 만듭니다.
+    // (긴급 수정) 방장 판정 다시 읽기 — 부팅 경쟁(첫 핑이 설정 읽기보다 빠름)·일시 오류로 진짜 방장 브라우저가 대기에 갇히지 않게
+    if (!isSudaSessionAdmin_()){ try{ await recheckSessionAdmin_(); }catch(e){} }
     if (!isSudaSessionAdmin_()){
       const err = new Error('HOST_SESSION_REQUIRED');
       err.code = 'HOST_SESSION_REQUIRED';
@@ -10420,6 +10426,7 @@ document.addEventListener('click', (e)=>{
     const ms = $('sudaGateMsg'); if (ms) ms.textContent = t.msg;
     const go = $('sudaGateGo'); if (go) go.hidden = !boom;
     const home = $('sudaGateHome'); if (home){ home.hidden = boom; home.href = WORKROOM_URL_; }
+    const adm = $('sudaGateAdmin'); if (adm) adm.hidden = (code !== 'wait');   // 준비 중에만 [방장이세요? 관리자 로그인]
     const sm = $('sudaGateSmall'); if (sm){ sm.textContent = t.small || ''; sm.hidden = !t.small; }
     g.hidden = false;
     try{ sudaRoot_().setAttribute('data-gate', gateMode_); }catch(e){}
@@ -10434,7 +10441,47 @@ document.addEventListener('click', (e)=>{
     if (g){ g.hidden = true; g.removeAttribute('data-gate'); }
     try{ sudaRoot_().removeAttribute('data-gate'); }catch(e){}
   }
+  // ── 준비 중(wait) 게이트의 [방장이세요? 관리자 로그인](긴급 수정 2026-09-26) ──
+  //    새 브라우저의 방장은 오늘 방을 못 열어 대기에 갇히는데, 게이트 동안은 머리 단추(설정)가 숨어 관리자 칸에 갈 길이 없었다(옛 화면은 ☰ 메뉴).
+  //    설정 카드와 같은 인증·복구(authenticateSessionResetAdmin_ → verifyAdminPassword_: 창 안 비밀번호 시트 · 눈 · 틀리면 칸 아래 오류)
+  //    → 되면 곧바로 핑 한 번(joinOrPing_이 오늘 방을 만들고 들어가며 hideGate_('wait')).
+  let gateAdminBusy_ = false;
+  async function gateAdminLogin_(){
+    if (gateAdminBusy_) return false;
+    gateAdminBusy_ = true;
+    try{
+      const ok = await authenticateSessionResetAdmin_('');
+      if (!ok) return false;
+      try{ await joinOrPing_(); }catch(e){}
+      return true;
+    }finally{
+      gateAdminBusy_ = false;
+    }
+  }
+
+  // ── 방장 판정 다시 읽기(긴급 수정 2026-09-26): 오늘 방이 없을 때 getOrCreateSession_이 '방장 아님'으로 끝내기 직전에 부른다 ──
+  //    설정을 아직 못 읽음 · 읽는 중 · 일시 오류(로그인 전·오프라인·시간 초과·안 끝나는 읽기) → 바로 한 번 다시 읽는다(핑마다)
+  //    → 부팅 경쟁·일시 오류로 진짜 방장 브라우저가 대기에 갇히지 않게.
+  //    방장 아님이 확정(NOT_OWNER · 권한 거부 = 규칙상 ownerUid 본인만 읽힘)이면 30초에 한 번만 다시 읽는다.
+  const ADMIN_RECHECK_NOT_OWNER_MS_ = 30000;
+  const ADMIN_RECHECK_READ_MS_ = 8000;
+  let adminRecheckAt_ = 0;
+  function adminConfigSaysNotOwner_(c){
+    const e = String((c && c.error) || '');
+    return e === 'NOT_OWNER' || /permission|denied/i.test(e);
+  }
+  async function recheckSessionAdmin_(){
+    if (isSudaSessionAdmin_()) return true;
+    const c = sessionAdminConfigCache_ || {};
+    const settled = !!c.loaded && !c.loading;
+    if (settled && adminConfigSaysNotOwner_(c) && Math.abs(now_() - adminRecheckAt_) < ADMIN_RECHECK_NOT_OWNER_MS_) return false;
+    adminRecheckAt_ = now_();
+    try{ await withTimeout_(loadSessionAdminPasswordConfig_(true), ADMIN_RECHECK_READ_MS_, 'adminConfig'); }catch(e){}
+    return isSudaSessionAdmin_();
+  }
+
   function initGate_(){
+    $('sudaGateAdmin')?.addEventListener('click', ()=>{ gateAdminLogin_(); });
     $('sudaGateGo')?.addEventListener('click', ()=>{
       hideGate_();
       setTimeout(()=>{ try{ $('msg')?.focus({ preventScroll: true }); }catch(e){} }, 30);
