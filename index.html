@@ -824,6 +824,20 @@ body.suda-page{height:100%; overflow:hidden; overscroll-behavior:none}
 .suda-acid-alt{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 10px; min-width:0}
 .suda-acid-alt .mkw-hint{flex:1 1 160px; min-width:0}
 .suda-acid-alt .mkw-btn{flex:0 0 auto}
+/* SUDA_0927A 마마코인 부루마블 패널 — [열기]면 게임(iframe)이 몸통을 가득 채운다(안내는 숨김 · 패널을 닫아도 iframe은 살아 있다) · 머리에 [새 탭으로 크게] */
+.suda-marble-stage{flex:1 1 auto; min-height:0; display:flex; background:var(--w-sunken)}
+.suda-marble-frame{flex:1 1 auto; display:block; width:100%; min-width:0; min-height:0; border:0; background:var(--w-surface)}
+.suda-marble-tab{flex:0 0 auto; text-decoration:none}
+/* 내 차례 알림: [+]·도구함 부루마블 칸의 점(피커 즐겨찾기 점과 같은 모양) · 토스트 안 [열기] */
+.suda-dot{position:relative}
+.suda-dot::after{content:""; position:absolute; right:2px; top:2px; width:9px; height:9px; border-radius:50%; background:rgb(var(--acc3rgb)); box-shadow:0 0 0 2px var(--w-bg); pointer-events:none}
+.mkw-act.suda-dot::after{right:8px; top:8px}
+.mkw-toast .suda-toast-act{pointer-events:auto; flex:0 0 auto; white-space:nowrap; height:24px; margin:-2px -6px -2px 4px; padding:0 10px; border-radius:999px; background:var(--w-bg); color:var(--w-text); font-size:12px; font-weight:700}
+/* SUDA_0927A 게임 시작 줄 바로가기 — 줄 끝 작은 알약([참가하기]·[열기]) · 끝난 판은 흐리게 · 읽기 전용 방·안내 화면에선 숨김 */
+.mkw-sys .suda-sys-go{flex:0 0 auto; height:22px; padding:0 8px; gap:3px; margin-left:2px; font-size:11px; border-color:var(--w-acc-ring); background:var(--w-acc-soft); color:var(--w-acc-text)}
+.mkw-sys .suda-sys-go .mkIc{width:12px; height:12px}
+.mkw-sys .suda-sys-go.is-ended{border-color:var(--w-line2); background:var(--w-surface); color:var(--w-text3)}
+#sudaApp[data-closed] .suda-sys-go, #sudaApp[data-gate] .suda-sys-go{display:none}
 /* 산성비 설명(정지 그림) */
 .suda-acid-demo{position:relative; flex:0 0 auto; height:210px; overflow:hidden; border-radius:14px; border:1px solid var(--w-line); background:linear-gradient(180deg, var(--w-sunken), var(--w-surface2))}
 .suda-acid-demo-top{position:absolute; left:10px; top:8px; font-size:11.5px; font-weight:700; color:var(--w-text2); font-variant-numeric:tabular-nums}
@@ -2700,14 +2714,15 @@ html.mkw-embedded #sudaApp[data-gate]:not([data-gate="boom"]) .mkw-hbtns > :not(
       <div class="mkw-panel-body suda-acid" id="sudaAcidBody"></div>
     </section>
 
-    <!-- 부루마블 패널: 새 창(앵커)으로 연다 -->
-    <section class="mkw-panel suda-panel" id="sudaMarblePanel" aria-label="부루마블" hidden>
-      <div class="mkw-panel-head"><button type="button" class="mkw-back" data-mkw-close aria-label="부루마블 닫기"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-back"></use></svg><span>부루마블</span></button><span class="mkw-grow"></span></div>
-      <div class="mkw-panel-body">
-        <div class="mkw-empty suda-big-empty"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-dice"></use></svg><b>부루마블은 새 창에서 열려요</b><span>판이 커서 따로 열어요 · 이 창은 그대로 두고 오가요</span></div>
-        <button type="button" class="mkw-btn is-primary is-block" id="btnMarbleOpen"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-link"></use></svg>부루마블 열기</button>
-        <p class="mkw-hint">열면 방에 "부루마블이 시작됐어요" 한 줄이 올라가요 · 같은 방 사람들이 한 판에 모여요</p>
+    <!-- 마마코인 부루마블 패널(SUDA_0927A): [열기] = 이 패널 안 iframe(패널을 닫아도 판은 계속 — 숨기기만) · 머리의 [새 탭으로 크게] = 새 탭(앵커)으로 옮김(창 안 판은 닫힘) -->
+    <section class="mkw-panel suda-panel" id="sudaMarblePanel" aria-label="마마코인 부루마블" hidden>
+      <div class="mkw-panel-head"><button type="button" class="mkw-back" data-mkw-close aria-label="마마코인 부루마블 닫기"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-back"></use></svg><span>마마코인 부루마블</span></button><span class="mkw-grow"></span><a class="mkw-btn is-sm is-ghost suda-marble-tab" id="btnMarbleTab" href="https://magammm1009.github.io/mmaabbbb1009/" target="_blank" rel="noopener noreferrer" aria-label="마마코인 부루마블을 새 탭으로 크게 열기" title="새 탭으로 옮겨요 · 이 창의 판은 닫혀요"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-link"></use></svg>새 탭으로 크게</a></div>
+      <div class="mkw-panel-body" id="sudaMarbleIntro">
+        <div class="mkw-empty suda-big-empty"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-dice"></use></svg><b>마마코인 부루마블은 이 창 안에서 열려요</b><span>크게 하려면 위의 [새 탭으로 크게] · 패널을 닫아도 판은 계속돼요</span></div>
+        <button type="button" class="mkw-btn is-primary is-block" id="btnMarbleOpen"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-play"></use></svg>마마코인 부루마블 열기</button>
+        <p class="mkw-hint">열면 방에 "마마코인 부루마블이 시작됐어요" 한 줄이 올라가요 · 같은 방 사람들이 한 판에 모여요</p>
       </div>
+      <div class="suda-marble-stage" id="sudaMarbleStage" hidden></div>
     </section>
 
     <!-- 효과 모음 패널(나에게만) -->
@@ -2745,7 +2760,7 @@ html.mkw-embedded #sudaApp[data-gate]:not([data-gate="boom"]) .mkw-hbtns > :not(
       <button type="button" class="mkw-act" id="btnImageUpload"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-photo"></use></svg><b>사진</b><span>사진 1장 · 끌어다 놓아도 돼요</span></button>
       <button type="button" class="mkw-act" id="btnRace"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-keyboard"></use></svg><b>타이핑 레이스</b><span>문장 빨리 치기 · 120초</span></button>
       <button type="button" class="mkw-act" id="btnAcid"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-drop"></use></svg><b>산성비</b><span>떨어지는 단어 막기 · 120초</span></button>
-      <button type="button" class="mkw-act" id="btnMarble"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-dice"></use></svg><b>부루마블</b><span>새 창에서 같이 하기</span></button>
+      <button type="button" class="mkw-act" id="btnMarble"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-dice"></use></svg><b>마마코인 부루마블</b><span>창 안에서 같이 하기</span></button>
       <button type="button" class="mkw-act" id="btnToolRequest"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-headphones"></use></svg><b>음악 신청</b><span>DJ에게 곡 신청</span></button>
       <button type="button" class="mkw-act" id="btnToolFx"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-chara"></use></svg><b>효과 모음</b><span>/축하 /하트 …</span></button>
     </div>
@@ -4403,6 +4418,7 @@ if(!expAtMs || expAtMs < now){
     try{ resetLogState_(); }catch(e){}
     try{ showJumpBtn_(false); }catch(e){}
     try{ renderTyping_({}, true); }catch(e){}   // SUDA_0926B ②: 방을 비울 땐 머물지 않고 바로 끈다
+    try{ removeMarbleFrame_(); }catch(e){}         // SUDA_0927A: 새 방(폭파·자정 전환) — 옛 방 부루마블 iframe은 없앤다
     raceDismissedId_ = '';
     soundBlocked_ = false;
     try{ if (acidEndTimer_){ clearTimeout(acidEndTimer_); acidEndTimer_ = null; } }catch(e){}
@@ -4479,6 +4495,7 @@ if(!expAtMs || expAtMs < now){
     try{ hideTicker_(); }catch(e){}
     try{ if (acidEndTimer_){ clearTimeout(acidEndTimer_); acidEndTimer_ = null; } }catch(e){}
     try{ syncClosedUi_(true); }catch(e){}
+    try{ removeMarbleFrame_(); }catch(e){}   // SUDA_0927A: 나가면 부루마블 iframe도 없앤다
     try{ showGate_('left'); }catch(e){}
   }
 
@@ -5040,9 +5057,11 @@ if (cmd === '/나체샤워'){
     if (type === 'system'){
       const el = renderSysLine_(text);
       el.dataset.ts = String(ts || '');
+      const gl = gameLineOf_(m, text);   // SUDA_0927A 게임 시작 줄 → 줄 끝 바로가기 단추
       insertLogNode_(log, el);
+      if (gl) addGameLineBtn_(el, gl);
       logGroup_ = null;
-      logLastSys_ = { el, ts, text };
+      logLastSys_ = gl ? null : { el, ts, text };   // 시작 줄은 효과 줄로 바꾸지 않는다(단추 보존)
       // ENTRY_HEARTS_V1: 입장 시스템 줄 주변 하트(지난 기록 재생은 제외)
       try{
         if (!(joinTs_ && ts && (Number(ts) < joinTs_ - 500)) && isEnterText_(text)) launchHeartsNearEl_(el);
@@ -6217,6 +6236,7 @@ function initTypingRace_(roomId){
       racePrevId_ = nid;
       racePrevStatus_ = nst;
       renderRaceBar_();
+      try{ syncGameLineBtns_('race'); }catch(e){}   // SUDA_0927A 시작 줄 단추(참가하기 ↔ 끝난 판)
     });
 
     // players
@@ -6508,7 +6528,7 @@ async function startRace_(diff){
     // 현재 레이스만 즉시 반영한다. (이전 코드의 acid* 상태 대입은 복사/붙여넣기 흔적)
     raceCur_ = cur;
     racePlayers_ = racePlayers_ || {};
-await pushSystem_(`🏁 ⌨️ 타이핑 레이스가 시작되었습니다! (난이도: ${raceDiffLabel_(d)}) — <무실수 10문장> 우승! ⏱️ 120초 제한 (이모지 자동 무시 / 기호는 그대로)`);
+await pushSystem_(`🏁 ⌨️ 타이핑 레이스가 시작되었습니다! (난이도: ${raceDiffLabel_(d)}) — <무실수 10문장> 우승! ⏱️ 120초 제한 (이모지 자동 무시 / 기호는 그대로)`, { game: 'race', gameId: cur.id });   // SUDA_0927A 바로가기
   }catch(e){
     showToast('레이스를 시작하지 못했어요 · 잠시 뒤 다시 해 주세요', 3000, 'err');
   }
@@ -6805,6 +6825,7 @@ function initAcidRain_(roomId){
     if (acidCurUnsub_) acidCurUnsub_();
     acidCurUnsub_ = window.FB.onValue(curRef, (snap)=>{
       acidCur_ = snap.exists() ? (snap.val() || null) : null;
+      try{ syncGameLineBtns_('acid'); }catch(e){}   // SUDA_0927A 시작 줄 단추(참가하기 ↔ 끝난 판)
 
       // 게임이 시작되면 스케줄 재구축
       try{
@@ -7438,7 +7459,7 @@ async function startAcidRain_(opts){
     acidUi_.lastPrefixOk = true;
     acidUi_.schedule = buildAcidSchedule_(cur);
 
-    await pushSystem_(`☔ ${cur.startedBy}님이 산성비를 시작했습니다! ⏱️ 120초 — 단어를 완벽하게 치고 Enter/Space!`);
+    await pushSystem_(`☔ ${cur.startedBy}님이 산성비를 시작했습니다! ⏱️ 120초 — 단어를 완벽하게 치고 Enter/Space!`, { game: 'acid', gameId: cur.id });   // SUDA_0927A 바로가기
     openAcidGame_();
   }catch(e){
     showToast('산성비를 시작하지 못했어요 · 잠시 뒤 다시 해 주세요', 3000, 'err');
@@ -7451,33 +7472,207 @@ window.startAcidRain_ = startAcidRain_;
 
 // (1단계 2026-09-26: 죽은 코드 삭제 — 루미큐브(베타)·파일 내 부루마블(글자수) 오버레이. 부루마블은 openMarble_이 별도 페이지를 연다)
 
-function openMarble_(){
-  if(!sessionId) return;
+// ── SUDA_0927A 마마코인 부루마블(v2) — 수다 창 안(패널 iframe)에서 기본으로 연다 · [새 탭으로 크게]는 선택 ──
+//   주소 ?sid=<수다 세션>&embed=1&theme=light|dark&accent=<#hex|비움> (embed 없음 = 새 탭용 보통 페이지 · 닉·이모지·포인트 색은 게임이 같은 오리진 저장소에서 읽는다)
+//   패널을 닫아도(뒤로·Esc·다른 패널) iframe은 살려 둔다(숨기기만 — 판이 계속 돈다) · 방을 나가거나 새 방(폭파·자정 전환)이 되면 없앤다
+//   게임 → 부모 postMessage: marble:close(패널 닫기 + iframe 제거) · marble:turn{mine:true}(내 차례 — 게임을 안 보고 있으면 알림) · marble:end
+//   받을 땐 오리진(MARBLE_ORIGIN_)과 보낸 창(우리 iframe) 둘 다 본다(같은 모양이라도 다른 창에서 온 것은 버린다)
+//   ⑪ 새 탭은 예전처럼 앵커(rel=noopener)로 연다 — window.open(…,'noopener')은 늘 null이라 "새창 차단" 대체 창이 떴다
+const MARBLE_URL_ = 'https://magammm1009.github.io/mmaabbbb1009/';   // 끝에 / 유지
+const MARBLE_ORIGIN_ = 'https://magammm1009.github.io';
+const MARBLE_NAME_ = '마마코인 부루마블';
+let marbleFrame_ = null;        // 패널 안 iframe
+let marbleFrameSid_ = '';       // 그 iframe이 연 방(세션)
+let marbleAnnounced_ = false;   // 이 판(iframe 수명) 동안 시작 줄을 올렸나 — 한 번만
+let marbleTurn_ = false;        // 게임을 안 보는 동안 내 차례가 왔다(점 · 창 모드 알약)
 
-  // ✅ 같은 수다방(sessionId)에서 모두 한 방으로 입장 (새창/새탭)
-  // ✅ GitHub Pages(정적 호스팅)로 열어서 GAS/Drive 권한 문제를 제거
-  const MARBLE_URL_ = 'https://magammm1009.github.io/mmaabbbb1009/'; // 끝에 / 유지 권장
+function marbleUrl_(embed){
+  let theme = 'light', acc = '';
+  try{ theme = (MKW.theme.get().applied === 'dark') ? 'dark' : 'light'; }catch(e){}
+  try{ acc = MKW.accent.current() || ''; }catch(e){}
+  return `${MARBLE_URL_}?sid=${encodeURIComponent(String(sessionId || '').trim())}${embed ? '&embed=1' : ''}&theme=${theme}&accent=${encodeURIComponent(acc)}`;
+}
+function announceMarble_(){
+  if (marbleAnnounced_ || !sessionId) return;
+  marbleAnnounced_ = true;
   const sid = String(sessionId || '').trim();
-  const gs  = 'G' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2,8).toUpperCase();
-
-  // 항상 새 판: sid/room + gs(게임세션) 포함
-  const src = `${MARBLE_URL_}?sid=${encodeURIComponent(sid)}&room=${encodeURIComponent(sid)}&gs=${encodeURIComponent(gs)}`;
-
-  // 🔔 시작 시스템 메시지(버튼 클릭 순간)
-  try{ pushSystem_(`🎲 부루마블이 시작됐어요! (방: ${sid})`); }catch(e){}
-
-  // ⑪ window.open(…,'noopener')은 규격상 항상 null을 돌려줘 "새창 차단" 대체 창이 매번 떴다.
-  //    창 핸들이 필요 없으므로 앵커 클릭으로 연다(결과 확인 없음 — 작업방 openSudaModal_과 같은 방식).
+  try{ pushSystem_(`🎲 ${MARBLE_NAME_}이 시작됐어요!`, { game: 'marble', sid }); }catch(e){}   // 시작 줄(다른 사람 화면엔 [열기]) · 방 번호는 글자에 안 쓰고 필드(sid)로만
+}
+function syncMarblePanel_(){
+  const on = !!marbleFrame_;
+  const intro = $('sudaMarbleIntro'); if (intro) intro.hidden = on;
+  const stage = $('sudaMarbleStage'); if (stage) stage.hidden = !on;
+}
+function syncMarbleDot_(){
+  ['btnTools', 'btnMarble'].forEach((id)=>{ const b = $(id); if (b) b.classList.toggle('suda-dot', marbleTurn_); });
+}
+function clearMarbleTurn_(){
+  if (!marbleTurn_) return;
+  marbleTurn_ = false;
+  syncMarbleDot_();
+  try{ pushEmbedStatus_(); }catch(e){}
+}
+// 패널 + iframe(없으면 만든다). join = 채팅 줄 [열기]·알림 [열기](이미 열린 판에 들어감) — 시작 줄을 다시 올리지 않는다
+function openMarble_(join){
+  if (!sessionId || left_) return;
+  const el = (topPanelName_() === 'marble') ? panelEl_('marble') : openPanel_('marble');
+  if (!el) return;
+  if (marbleFrame_ && marbleFrameSid_ !== String(sessionId)) removeMarbleFrame_();   // 방이 바뀌었으면 새로
+  if (!marbleFrame_){
+    const stage = $('sudaMarbleStage');
+    if (!stage) return;
+    const f = document.createElement('iframe');
+    f.id = 'sudaMarbleFrame';
+    f.className = 'suda-marble-frame';
+    f.title = MARBLE_NAME_;
+    f.setAttribute('allow', 'autoplay; clipboard-write');
+    f.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    f.src = marbleUrl_(true);
+    stage.appendChild(f);
+    marbleFrame_ = f;
+    marbleFrameSid_ = String(sessionId);
+    if (!join) announceMarble_();
+  }
+  syncMarblePanel_();
+}
+function removeMarbleFrame_(){
+  try{ if (marbleFrame_) marbleFrame_.remove(); }catch(e){}
+  marbleFrame_ = null;
+  marbleFrameSid_ = '';
+  marbleAnnounced_ = false;
+  clearMarbleTurn_();
+  syncMarblePanel_();
+}
+// [새 탭으로 크게] — 앵커가 누르는 순간의 주소(embed 없음)로 새 탭을 연다. 창 안에서 연 적이 없으면 여기서 시작 줄 한 번
+//   새 탭으로 옮긴다: 같은 사람이 같은 판을 두 곳에서 잡지 않게 패널 iframe은 없애고 패널도 닫는다(옮긴 것이라 시작 줄은 다시 안 올린다)
+function marbleTabClick_(ev){
+  if (!sessionId || left_){ try{ ev.preventDefault(); }catch(e){} return; }
+  try{ ev.currentTarget.href = marbleUrl_(false); }catch(e){}
+  if (!marbleFrame_) announceMarble_();
+  setTimeout(()=>{   // 앵커가 새 탭을 먼저 연 다음에
+    try{
+      if (marbleFrame_){ const ann = marbleAnnounced_; removeMarbleFrame_(); marbleAnnounced_ = ann; }
+      if (topPanelName_() === 'marble') closePanels_();
+    }catch(e){}
+  }, 0);
+}
+function marbleTurnNote_(){
+  if (topPanelName_() === 'marble' && !(embedOn_() && embedVis_ === 'minimized')) return;   // 게임을 보고 있다
+  marbleTurn_ = true;
+  syncMarbleDot_();
+  try{ embedNoteNew_(Date.now()); }catch(e){}   // 창 모드에서 접혀 있으면 알약: 새 소식 +1 · 부제 '내 차례예요'(pushEmbedStatus_)
+  const rec = showToast(`🎲 ${MARBLE_NAME_} 내 차례예요`, 6000, 'info');
   try{
-    const a = document.createElement('a');
-    a.href = src;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-  }catch(e){ console.warn('openMarble failed', e); }
+    if (rec && rec.el){
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'suda-toast-act';
+      b.textContent = '열기';
+      b.addEventListener('click', ()=>{ try{ rec.close(); }catch(e){} openMarble_(true); });
+      rec.el.appendChild(b);
+    }
+  }catch(e){}
+}
+function onMarbleMessage_(ev){
+  const f = marbleFrame_;
+  if (!f || ev.origin !== MARBLE_ORIGIN_ || ev.source !== f.contentWindow) return;   // 우리 iframe에서 온 것만
+  const m = ev.data;
+  if (!m || typeof m !== 'object') return;
+  if (m.type === 'marble:close'){
+    if (topPanelName_() === 'marble') closePanels_();
+    removeMarbleFrame_();
+  }else if (m.type === 'marble:turn'){
+    if (m.mine === true) marbleTurnNote_();
+  }else if (m.type === 'marble:end'){
+    clearMarbleTurn_();
+  }
+}
+function initMarble_(){
+  window.addEventListener('message', onMarbleMessage_);
+  $('btnMarbleOpen')?.addEventListener('click', ()=>{ try{ openMarble_(false); }catch(e){ console.warn(e); } });
+  $('btnMarbleTab')?.addEventListener('click', marbleTabClick_);
+}
+
+// ── SUDA_0927A 게임 시작 줄 바로가기 — 산성비·레이스 [참가하기] · 마마코인 부루마블 [열기] ──
+//   새 시작 줄은 판을 가리키는 필드(game·gameId·sid)를 싣는다(옛 앱은 글자만 그린다 — 호환). 필드 없는 옛 줄은 문구로 알아본다(옛 이름 '부루마블'도).
+//   끝난 판은 흐린 [끝난 판](누르면 패널만 — 지난 순위·새로 시작). 판 상태가 바뀌면 화면에 있는 그 게임 단추만 다시 칠한다(목록은 안 그린다).
+//   읽기 전용 방·안내 화면에선 숨김(CSS) · 누르지도 못함(gameLineGo_)
+const GAME_LINE_RE_ = Object.freeze({
+  acid: /^☔\s*.+?님이 산성비를 시작했습니다!/u,
+  race: /^🏁\s*(?:⌨️?\s*)?타이핑 레이스가 시작되었습니다!/u,
+  marble: /^🎲\s*(?:마마코인\s*)?부루마블이 시작됐어요!/u
+});
+const gameLineLast_ = { acid: null, race: null, marble: null };   // 게임별 마지막 시작 줄 단추(판 번호 없는 옛 줄은 마지막 것만 '진행 중' 후보)
+const gameLineTimers_ = {};
+function gameLineOf_(m, text){
+  const g = String((m && m.game) || '');
+  if (g === 'acid' || g === 'race') return { game: g, id: String(m.gameId || '') };
+  if (g === 'marble') return { game: g, id: String(m.sid || '') };
+  const t = String(text || '');
+  for (const k of Object.keys(GAME_LINE_RE_)) if (GAME_LINE_RE_[k].test(t)) return { game: k, id: '' };
+  return null;
+}
+function gameCur_(g){ return g === 'acid' ? acidCur_ : (g === 'race' ? raceCur_ : null); }
+function gameLive_(g){ return g === 'acid' ? acidIsLive_(acidCur_) : (g === 'race' ? isGameRunning_(raceCur_, RACE_LIMIT_MS_) : false); }
+function gameLineState_(b){
+  const g = b.dataset.game;
+  if (g === 'marble') return 'open';   // 부루마블 판 상태는 수다가 모른다 — 늘 [열기](그 방의 판으로 들어간다)
+  if (!gameLive_(g)) return 'ended';
+  const id = b.dataset.gameId || '';
+  if (id) return String((gameCur_(g) || {}).id || '') === id ? 'live' : 'ended';
+  return gameLineLast_[g] === b ? 'live' : 'ended';
+}
+function paintGameLineBtn_(b){
+  const st = gameLineState_(b);
+  if (b.dataset.st === st) return;
+  b.dataset.st = st;
+  const g = b.dataset.game;
+  const ended = st === 'ended';
+  const nm = g === 'acid' ? '산성비' : (g === 'race' ? '타이핑 레이스' : MARBLE_NAME_);
+  b.classList.toggle('is-ended', ended);
+  b.innerHTML = ic_(ended ? 'clock' : (g === 'marble' ? 'dice' : 'play')) + (ended ? '끝난 판' : (g === 'marble' ? '열기' : '참가하기'));
+  b.setAttribute('aria-label', ended ? `${nm} — 끝난 판(지난 순위·새로 시작 보기)` : (g === 'marble' ? `${nm} 열기` : `${nm} 진행 중인 판에 참가하기`));
+}
+function addGameLineBtn_(el, gl){
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'mkw-btn is-sm is-pill suda-sys-go';
+  b.dataset.game = gl.game;
+  if (gl.id) b.dataset.gameId = gl.id;
+  el.appendChild(b);
+  const prev = gameLineLast_[gl.game];
+  gameLineLast_[gl.game] = b;
+  paintGameLineBtn_(b);
+  if (prev && prev.isConnected) paintGameLineBtn_(prev);   // 앞 줄은 이제 마지막이 아니다(옛 줄이면 끝난 판으로)
+}
+// 판 상태가 바뀌면(구독) 화면에 있는 그 게임 단추만 다시 칠한다 + 진행 중이면 끝 시각에 한 번 더
+function syncGameLineBtns_(g){
+  try{
+    const log = $('log');
+    if (log) log.querySelectorAll(`.suda-sys-go[data-game="${g}"]`).forEach(paintGameLineBtn_);
+  }catch(e){}
+  try{
+    clearTimeout(gameLineTimers_[g]);
+    const c = gameCur_(g);
+    if (c && gameLive_(g)){
+      const endsAt = g === 'acid' ? acidEndsAt_(c) : (Number(c.endsAt || 0) || (Number(c.startedAt || 0) + RACE_LIMIT_MS_));
+      const wait = endsAt - (g === 'acid' ? acidNow_() : Date.now());
+      if (wait > 0 && wait < 3600000) gameLineTimers_[g] = setTimeout(()=> syncGameLineBtns_(g), wait + 300);
+    }
+  }catch(e){}
+}
+function gameLineGo_(b){
+  if (!sessionId || left_ || roomClosed_ || gateMode_) return;   // 읽기 전용 방·안내 화면에선 누를 수 없다
+  const g = b.dataset.game;
+  if (g === 'acid'){ openAcidStart_(); return; }   // 진행 중이면 게임 화면(참가) · 끝났으면 지난 순위·새로 시작
+  if (g === 'race'){ if (gameLive_('race')) raceJoin_(); else openRaceStart_(); return; }
+  if (g === 'marble') openMarble_(true);
+}
+function initGameLineBtns_(){
+  $('log')?.addEventListener('click', (ev)=>{
+    const b = ev.target && ev.target.closest ? ev.target.closest('.suda-sys-go') : null;
+    if (b) gameLineGo_(b);
+  });
 }
 
 
@@ -8678,7 +8873,8 @@ function launchClap_(byName){
 }
 
 
-async function pushSystem_(text){
+// SUDA_0927A: extra = 게임 시작 줄의 판 가리키기 필드({game, gameId, sid} — 바로가기 단추용 · 옛 앱은 글자만 그린다)
+async function pushSystem_(text, extra){
   if (!sessionId) return;
   const t = String(text || '').trim();
   if (!t) return;
@@ -8686,7 +8882,11 @@ async function pushSystem_(text){
     await window.FB.ensureAnonAuth();
     const root = window.FB.ref(window.FB.db, fbMessagesPath_(sessionId));
     const msgRef = window.FB.push(root);
-    await window.FB.set(msgRef, { name:'SYSTEM', text: t.slice(0,2000), ts: Date.now(), type:'system' });
+    const x = {};
+    if (extra && extra.game) x.game = String(extra.game).slice(0, 16);
+    if (extra && extra.gameId) x.gameId = String(extra.gameId).slice(0, 64);
+    if (extra && extra.sid) x.sid = String(extra.sid).slice(0, 80);
+    await window.FB.set(msgRef, Object.assign({ name:'SYSTEM', text: t.slice(0,2000), ts: Date.now(), type:'system' }, x));
   }catch(e){
     console.warn('pushSystem failed', e);
   }
@@ -10504,7 +10704,7 @@ document.addEventListener('click', (e)=>{
   }
 
   // ── 대화 목록 도우미 ──
-  function resetLogState_(){ logGroup_ = null; logDayKey_ = ''; logLastSys_ = null; try{ profileByUid_.clear(); }catch(e){} }
+  function resetLogState_(){ logGroup_ = null; logDayKey_ = ''; logLastSys_ = null; try{ profileByUid_.clear(); }catch(e){} try{ gameLineLast_.acid = gameLineLast_.race = gameLineLast_.marble = null; }catch(e){} }
   function lastLogItem_(log){
     const tb = $('typingBar');
     let el = log ? log.lastElementChild : null;
@@ -10635,6 +10835,7 @@ document.addEventListener('click', (e)=>{
       const b = $('sudaAcidBody'); if (b) b.innerHTML = '';   // 열 때마다 새로(게임 중이면 스테이지부터 다시)
       acidRender_();
     },
+    marble: ()=>{ syncMarblePanel_(); clearMarbleTurn_(); },   // SUDA_0927A: 살아 있는 판(iframe)은 그대로 보인다 · 내 차례 점 지움
     fx: ()=> renderFxPanel_(),
     guide: ()=> renderGuidePanel_()
   };
@@ -11398,7 +11599,7 @@ document.addEventListener('click', (e)=>{
   const GUIDE_ITEMS_ = Object.freeze([
     ['bomb', '자정에 폭파돼요', '대화는 그날 하루만 남아요 · 머리에 남은 시간이 보여요'],
     ['headphones', '음악 띠', '머리 아래 띠를 누르면 음악 패널 · 들어올 때 [같이 듣기]를 한 번 눌러요 · DJ는 누구나 맡아요'],
-    ['plus', '[+] 도구', '사진 · 타이핑 레이스 · 산성비 · 부루마블 · 음악 신청 · 효과 모음'],
+    ['plus', '[+] 도구', '사진 · 타이핑 레이스 · 산성비 · 마마코인 부루마블 · 음악 신청 · 효과 모음'],
     ['smile', '웃는 얼굴', '이모지와 효과를 골라 넣어요 · 별을 누르면 즐겨찾기'],
     ['chara', '효과 미리보기', '/축하처럼 쓰면 보내기 전에 입력칸 위에 무슨 효과인지 보여요'],
     ['gear', '설정', '내 이름 · 테마 · 글자 크기 · 볼륨 · 나가기'],
@@ -11728,13 +11929,12 @@ document.addEventListener('click', (e)=>{
     $('btnImageUpload')?.addEventListener('click', act(chooseDriveImageFile_));
     $('btnRace')?.addEventListener('click', act(()=> openRaceStart_()));       // 레이스 패널
     $('btnAcid')?.addEventListener('click', act(()=> openAcidStart_()));       // 산성비 패널
-    $('btnMarble')?.addEventListener('click', act(()=> openPanel_('marble'))); // 부루마블 패널([부루마블 열기]가 새 창)
+    $('btnMarble')?.addEventListener('click', act(()=> openPanel_('marble'))); // 마마코인 부루마블 패널(SUDA_0927A: [열기] = 패널 안 iframe · [새 탭으로 크게])
     $('btnToolFx')?.addEventListener('click', act(()=> openEffectsPanel_()));
     $('btnToolRequest')?.addEventListener('click', act(()=>{
       openPanel_('music', { tab: 'req' });
       setTimeout(()=>{ try{ $('reqUrl')?.focus({ preventScroll: true }); }catch(e){} }, 80);
     }));
-    $('btnMarbleOpen')?.addEventListener('click', ()=>{ try{ openMarble_(); }catch(e){ console.warn(e); } closePanels_(); });
     updatePreview_();
   }
 
@@ -12016,7 +12216,7 @@ document.addEventListener('click', (e)=>{
     const paused = !!(v && String(v.state || '') === 'paused');
     const playing = !!(has && !paused && bgmAllowed_ && musicPlaying_ && !soundBlocked_);   // 같이 듣는 중(소리가 나는 중)
     const song = playing ? String(musicTitle_ || (v && v.title) || '') : '';
-    MKW.embed.status({ title: '수다방', sub: song || embedSub_(), unread: embedUnread_, playing });
+    MKW.embed.status({ title: '수다방', sub: marbleTurn_ ? `${MARBLE_NAME_} 내 차례예요` : (song || embedSub_()), unread: embedUnread_, playing });   // SUDA_0927A: 부루마블 내 차례면 부제로
   }
   function embedNoteNew_(ts){
     if (!embedOn_() || embedVis_ !== 'minimized') return;
@@ -12043,6 +12243,7 @@ document.addEventListener('click', (e)=>{
     MKW.embed.on('mkw:visibility', (m)=>{
       embedVis_ = (m && m.state === 'minimized') ? 'minimized' : 'open';
       if (embedVis_ === 'open') embedUnread_ = 0;
+      if (embedVis_ === 'open' && topPanelName_() === 'marble') clearMarbleTurn_();   // SUDA_0927A: 펼치면 게임이 보인다
       pushEmbedStatus_();
     });
     MKW.embed.on('mkw:focus', ()=>{
@@ -12111,6 +12312,8 @@ document.addEventListener('click', (e)=>{
     try{ initAdminCard_(); }catch(e){ console.error(e); }
     try{ initRacePanel_(); }catch(e){ console.error(e); }
     try{ initAcidPanel_(); }catch(e){ console.error(e); }
+    try{ initMarble_(); }catch(e){ console.error(e); }          // SUDA_0927A 부루마블 창 안 · postMessage
+    try{ initGameLineBtns_(); }catch(e){ console.error(e); }    // SUDA_0927A 시작 줄 바로가기
     try{ initFxPanel_(); }catch(e){ console.error(e); }
     try{ initGate_(); }catch(e){ console.error(e); }
     try{ initLightbox_(); }catch(e){ console.error(e); }
@@ -12133,7 +12336,7 @@ document.addEventListener('click', (e)=>{
     ui: ()=> ({ panel: topPanelName_(), tray: !($('sudaTray')?.hidden ?? true), picker: !($('sudaPicker')?.hidden ?? true), pickerTab: pickerTab_, pickerStar: pickerStar_,
       listen: bgmAllowed_, theme: mkwOk_() ? MKW.theme.get() : null, font: mkwOk_() ? MKW.font.get() : '', width: mkwOk_() ? MKW.pageWidth.get() : '',
       gate: gateMode_, musicTab: musicTab_, acidOpen: acidPanelOpen_, raceDismissed: raceDismissedId_, soundBlocked: soundBlocked_,
-      lightbox: !($('sudaLightbox')?.hidden ?? true), imeGuardMs: IME_GUARD_MS_ }),
+      lightbox: !($('sudaLightbox')?.hidden ?? true), imeGuardMs: IME_GUARD_MS_, marble: !!marbleFrame_, marbleTurn: marbleTurn_ }),   // SUDA_0927A marble·marbleTurn
     myProfile: ()=> myProfile_(),
     // SUDA_0926B ③④ 읽기 전용: 산성비 서버 시각 · 단어 풀 · 새 덱에서 n개 뽑아 보기(판의 덱은 건드리지 않음 · 앞 shortN개는 3음절 이하 단계)
     acidNow: ()=> acidNow_(),
