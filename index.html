@@ -560,6 +560,12 @@ body.suda-page{height:100%; overflow:hidden; overscroll-behavior:none}
 .suda-chat{position:relative; flex:1 1 auto; min-height:0; display:flex; flex-direction:column}
 .suda-chat.dragOver::after{content:""; position:absolute; inset:6px; z-index:4; border:2px dashed var(--w-acc-ring); border-radius:14px; background:var(--w-acc-soft); pointer-events:none}
 #log{scrollbar-gutter:stable}
+/* SUDA_0926B ② 입력 중 줄: 자리는 늘 비워 둔다(한 줄 18px · 흐름 안 · hidden 토글 없음) → 나타나고 사라져도 목록 높이·스크롤이 그대로. 켜고 끄기는 투명도만(짧은 페이드) */
+#log > #typingBar{flex:0 0 auto; height:18px; margin:6px 2px 0; overflow:hidden; white-space:nowrap; opacity:0; visibility:hidden; transition:opacity .16s ease, visibility 0s linear .16s}
+#log > #typingBar.show{opacity:1; visibility:visible; transition:opacity .16s ease, visibility 0s}
+#log > #typingBar > #typingText{min-width:0; overflow:hidden; text-overflow:ellipsis}
+#log > #typingBar:not(.show) .mkw-typing-dots > i{animation:none}
+@media (prefers-reduced-motion:reduce){ #log > #typingBar, #log > #typingBar.show{transition:none} }
 .mkw-name .suda-emo{margin-right:4px; font-weight:400}
 .mkw-img{text-decoration:none; color:inherit}
 .mkw-img > img{background:var(--w-surface2)}
@@ -814,6 +820,10 @@ body.suda-page{height:100%; overflow:hidden; overscroll-behavior:none}
 .acidBoard .line{display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px dashed var(--w-line); font-size:12.5px; font-weight:600; color:var(--w-text)}
 .acidBoard .line:last-child{border-bottom:0}
 .acidBoard .mkw-card-aside .mkw-hint{font-size:11px}
+/* SUDA_0926B ③ H4: 게임 화면 아래 보조 줄 — [새 판 시작]은 작은 단추(기본 동작은 참가) */
+.suda-acid-alt{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px 10px; min-width:0}
+.suda-acid-alt .mkw-hint{flex:1 1 160px; min-width:0}
+.suda-acid-alt .mkw-btn{flex:0 0 auto}
 /* 산성비 설명(정지 그림) */
 .suda-acid-demo{position:relative; flex:0 0 auto; height:210px; overflow:hidden; border-radius:14px; border:1px solid var(--w-line); background:linear-gradient(180deg, var(--w-sunken), var(--w-surface2))}
 .suda-acid-demo-top{position:absolute; left:10px; top:8px; font-size:11.5px; font-weight:700; color:var(--w-text2); font-variant-numeric:tabular-nums}
@@ -2491,7 +2501,7 @@ html.mkw-embedded #sudaApp[data-gate]:not([data-gate="boom"]) .mkw-hbtns > :not(
       </div>
       <div class="mkw-listwrap">
         <div class="mkw-list" id="log" role="log" aria-label="대화" aria-live="polite">
-          <div class="mkw-typing" id="typingBar" hidden><span id="typingText"></span><span class="mkw-typing-dots" aria-hidden="true"><i></i><i></i><i></i></span></div>
+          <div class="mkw-typing" id="typingBar"><span id="typingText"></span><span class="mkw-typing-dots" aria-hidden="true"><i></i><i></i><i></i></span></div>
         </div>
         <button type="button" class="mkw-newpill" id="jumpBtn" aria-label="새 메시지로 내려가기"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-down"></use></svg>새 메시지 <span id="jumpCnt">0</span></button>
       </div>
@@ -3976,10 +3986,11 @@ function escapeHtml(s){
   // - dayKey(서울) 기준으로 하루 1세션
   // =====================
   const SUDA_HUB_PATH_ = () => `sudaHub/currentSessionV1`;
+  let dayKeyFmt_ = null;   // SUDA_0926B ①: 서식기는 처음 쓸 때 한 번만 만든다 — 하루치 수천 줄을 그릴 때 줄마다 새로 만들면 6,500줄에 약 0.6초
   function dayKeySeoul_(ms){
     // 시각은 now_()(시험에서 주입 가능). 인자로 ms를 주면 그 시각의 날짜.
-    return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' })
-      .format(new Date(Number.isFinite(ms) ? ms : now_()));
+    if (!dayKeyFmt_) dayKeyFmt_ = new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Seoul', year:'numeric', month:'2-digit', day:'2-digit' });
+    return dayKeyFmt_.format(new Date(Number.isFinite(ms) ? ms : now_()));
   }
   function makeSessionId_(){
     // 충돌 낮추기: 날짜 + 랜덤
@@ -4391,7 +4402,7 @@ if(!expAtMs || expAtMs < now){
     }catch(e){}
     try{ resetLogState_(); }catch(e){}
     try{ showJumpBtn_(false); }catch(e){}
-    try{ renderTyping_({}); }catch(e){}
+    try{ renderTyping_({}, true); }catch(e){}   // SUDA_0926B ②: 방을 비울 땐 머물지 않고 바로 끈다
     raceDismissedId_ = '';
     soundBlocked_ = false;
     try{ if (acidEndTimer_){ clearTimeout(acidEndTimer_); acidEndTimer_ = null; } }catch(e){}
@@ -4602,12 +4613,15 @@ initChat_(roomId);
   // =====================
   // Chat
   // =====================
+  // SUDA_0926B ① 하루 대화 전부: 그날 방(세션)의 메시지를 다 받는다 — 방은 자정·폭파 때 새 세션이라 초기화 기준은 그대로.
+  //   안전 상한만 둔다: 옛 서버 실측 하루 최다 6,453건·1.28MB(2026-06-28), 보통 500~2,000건
+  const CHAT_DAY_CAP_ = 8000;
   function initChat_(roomId){
     if (fbStarted) return;
     fbStarted = true;
 
     const root = window.FB.ref(window.FB.db, fbMessagesPath_(roomId));
-    const q = window.FB.query(root, window.FB.limitToLast(200));
+    const q = window.FB.query(root, window.FB.limitToLast(CHAT_DAY_CAP_));
 
     chatUnsub_ = window.FB.onChildAdded(q, (snap)=>{
       if (!snap.exists()) return;
@@ -5308,7 +5322,11 @@ async function stopTyping_(){
   }catch(e){}
 }
 
-function renderTyping_(val){
+// SUDA_0926B ② 입력 중 줄은 자리를 늘 지킨다(흐름 안 18px) — 켜고 끄기는 .show(투명도)만 → 목록 높이가 안 바뀌어 스크롤을 건드리지 않는다.
+//   사라질 땐 잠깐 머물렀다가 끈다(타자 사이 깜빡임 방지). immediate = 방을 비울 때(바로 끔).
+const TYPING_LINGER_MS_ = 1200;
+let typingHideTimer_ = null;
+function renderTyping_(val, immediate){
   // 2단계: 목록 맨 아래 "○○님이 입력 중 ···" 줄(#typingBar). ⓗ 내 것은 uid로 뺀다(같은 닉 다른 사람은 보인다).
   const bar = $('typingBar');
   if (!bar) return;
@@ -5330,23 +5348,26 @@ function renderTyping_(val){
 
   const log = $('log');
   if (!names.length){
-    if (!bar.hidden){
-      bar.hidden = true;
+    if (immediate){
+      clearTimeout(typingHideTimer_);
+      typingHideTimer_ = null;
       bar.classList.remove('show');
       txt.textContent = '';
+    }else if (bar.classList.contains('show') && !typingHideTimer_){
+      typingHideTimer_ = setTimeout(()=>{ typingHideTimer_ = null; try{ bar.classList.remove('show'); }catch(e){} }, TYPING_LINGER_MS_);
     }
     return;
   }
+  clearTimeout(typingHideTimer_);
+  typingHideTimer_ = null;
 
   const uniq = Array.from(new Set(names)).slice(0,3);
   const more = names.length - uniq.length;
   const who = uniq.map((n)=> `${n}님`).join(', ');
   txt.textContent = `${who}${more > 0 ? ` 외 ${more}명` : ''}이 입력 중`;
-  bar.hidden = false;
-  bar.classList.add('show');
+  bar.classList.add('show');   // SUDA_0926B ②: 자리는 이미 있다 → 스크롤하지 않는다
   try{
     if (log && bar.parentNode === log && log.lastElementChild !== bar) log.appendChild(bar);
-    if (log && autoScroll_) log.scrollTop = log.scrollHeight;
   }catch(e){}
 }
 
@@ -6533,64 +6554,177 @@ const ACID_EVENT_PROB_ = 0.12; // 확률
 const ACID_EVENT_POINTS_ = 3;
 const ACID_EVENT_FALL_MIN_MS_ = 2600;
 const ACID_EVENT_FALL_MAX_MS_ = 4200;
-const ACID_POOL_ = `
-사랑 고백 후회 구원 침묵 불꽃 그림자 빛 달 비 새벽 고요
-탑 문 열쇠 비밀 계약 각인 망각 환상 진실 운명 심장 숨
-파도 숲 밤 꿈 상처 손끝 온기 절망 희망 오해 약속 거리
-가면 초대 도망 추격 미소 눈물 폭풍 검 마법 저주 기도 성좌
-아이돌 무대 연습 데뷔 카메라 컷 씬 편집 서사 클리셰 반전
-주인공 조연 악역 조력자 비밀친구 첫사랑 재회 이별 고백편지
-기억 상실 회귀 빙의 환생 계약결혼 정략결혼 운명론 짝사랑
-질투 오해 화해 포옹 입맞춤 손잡기 약혼 결혼식 신혼여행
-마감 원고 퇴고 교정 교열 초고 개고 문장 문단 대사 독백
-플롯 설정 세계관 인물 관계 사건 복선 떡밥 전환 결말
-장르 로맨스 판타지 현대물 무협 미스터리 스릴러 코미디 드라마
-영화 화면 장면 음악 조명 색감 클로즈업 롱테이크 몽타주
-책상 노트 펜 키보드 커피 차 쿠키 야식 담요 창문 별빛
-여름 가을 겨울 봄 벚꽃 장마 눈송이 바람 햇살 노을 안개
-바다 호수 강 산 들판 골목 지하철 기차 공항 호텔 도서관
-교수 강의 수업 과제 발표 토론 팀플 시험 답안 성적 방학
-캠퍼스 교실 복도 옥상 운동장 동아리 축제 공연 전시 연습실
-카페 서점 편의점 식당 공원 병원 회사 회의실 작업실 스튜디오
-소설 시나리오 웹툰 게임 방송 라디오 공연 무대인사 인터뷰
-질문 대답 선택 결심 용기 불안 기대 설렘 긴장 안도 위로
-인사 안녕 고마워 미안해 괜찮아 수고했어 힘내자 잘했어 파이팅
-기적 우연 필연 가능성 시간 공간 차원 미래 과거 현재 순간
-왕관 기사 공주 황제 마탑 용 드래곤 요정 마녀 정령 연금술
-검술 궁수 마법사 사제 도적 기사단 길드 퀘스트 던전 보물
-도시 야경 신호등 횡단보도 우산 골목길 편지함 엘리베이터 계단
-목소리 표정 눈빛 체온 향기 습관 버릇 농담 장난 웃음소리
-미완성 완성 시작 끝맺음 도전 실패 성공 성장 변화 발견
-독자 댓글 추천 조회수 표지 제목 부제 연재 공모전 출간 계약서
-영감 집중 휴식 타이머 루틴 목표 계획 체크리스트 성취 보상
-폭파 수다 대화 공감 리액션 하트 박수 반짝 축하 응원
-초콜릿 딸기 복숭아 레몬 민트 바닐라 치즈 라떼 에이드 빙수
-고양이 강아지 토끼 여우 곰 판다 수달 햄스터 병아리 나비
-우주 행성 별자리 은하 혜성 유성 달빛 태양 구름 번개 무지개
-정원 꽃잎 장미 튤립 라일락 국화 수선화 민들레 허브 나무
-노래 춤 리듬 멜로디 화음 박자 가사 앨범 플레이리스트 이어폰
-비망록 지도 나침반 가방 사진 앨범 상자 열람실 아지트 암호
-` .trim().split(/\s+/);
+const ACID_STALE_MS_ = 30 * 1000;   // SUDA_0926B ③ H2: 끝 시각이 이만큼 넘게 지난 running은 조용히 닫는다(결과 알림을 다시 올리지 않음)
+// SUDA_0926B ④ 단어 풀 1498개(범주 27개 · 1~6음절, 대부분 2~4) — 모두가 보는 방이라 누구나 편한 말만(비속어·혐오·실존 인물·상표 없음) · 한글만.
+//   범주 줄은 주석 · 겹친 단어는 Set이 한 번만 남긴다(한 판 안 반복은 덱이 막는다 — acidPickWord_)
+const ACID_POOL_ = Array.from(new Set([
+  // 일상
+  `아침 점심 저녁 새벽 한낮 한밤 출근 퇴근 등교 하교 청소 빨래 설거지 장보기 산책 낮잠 기지개 하품 양치 세수
+   샤워 목욕 이불 베개 알람 달력 일기 메모 외출 귀가 택배 우편 열쇠 지갑 우산 거울 수건 비누 치약 칫솔 슬리퍼
+   주말 휴일 평일 약속 모닝콜 늦잠 아침밥 도시락 장바구니 영수증 분리수거 휴지 손수건 머리끈 손거울 반찬 집안일
+   이사 집들이 배낭`,
+  // 집·물건
+  `책상 의자 소파 침대 책장 옷장 식탁 커튼 전등 시계 액자 화분 냉장고 세탁기 전자레인지 선풍기 에어컨 청소기
+   텔레비전 리모컨 가습기 난로 주전자 냄비 프라이팬 국자 주걱 도마 숟가락 젓가락 포크 접시 그릇 컵 머그컵 쟁반
+   빨대 방석 쿠션 담요 노트 펜 키보드 마우스 모니터 노트북 충전기 스탠드 손전등 건전지 초인종 현관 계단 엘리베이터
+   창문 벽지 카펫 옷걸이 빨래집게 다리미 재봉틀 바구니 상자 편지함 가방 사진 앨범 지도 나침반 비망록 암호 아지트
+   열람실 선물상자 풍선 촛불 성냥`,
+  // 음식
+  `김밥 떡볶이 라면 비빔밥 불고기 김치 된장찌개 김치찌개 순두부 삼겹살 냉면 칼국수 만두 잡채 갈비 떡국 호떡 붕어빵
+   어묵 순대 튀김 짜장면 짬뽕 탕수육 볶음밥 주먹밥 샌드위치 햄버거 피자 파스타 스테이크 샐러드 수프 카레 오므라이스
+   돈가스 우동 초밥 계란말이 감자전 파전 빈대떡 식혜 수정과 호박죽 팥죽 떡 송편 약과 경단 미역국 갈비탕 삼계탕
+   설렁탕 곰탕 부대찌개 닭갈비 쌈밥 국수 수제비 누룽지 계란찜 콩나물 깍두기 동치미 김 두부 쌀밥 보리밥 군만두 찐빵
+   꽈배기 호빵 군고구마 군밤 옥수수 감자 고구마 야식 치즈 바닐라 민트`,
+  // 과일·채소
+  `사과 배 포도 딸기 수박 참외 복숭아 자두 귤 오렌지 레몬 바나나 키위 망고 체리 블루베리 석류 감 곶감 대추 밤
+   호두 땅콩 아몬드 잣 유자 한라봉 멜론 파인애플 코코넛 매실 앵두 살구 무화과 당근 오이 호박 가지 양파 마늘 대파
+   배추 무 상추 깻잎 버섯 토마토 파프리카 브로콜리 양배추 시금치 연근 우엉 도라지 고사리`,
+  // 간식·음료
+  `과자 사탕 젤리 초콜릿 쿠키 케이크 마카롱 도넛 와플 팬케이크 푸딩 아이스크림 빙수 식빵 크루아상 베이글 머핀 스콘
+   카스텔라 롤케이크 타르트 마들렌 팝콘 솜사탕 우유 두유 주스 녹차 홍차 보리차 코코아 라떼 에이드 스무디 요거트
+   밀크티 레모네이드 생수 탄산수 핫초코 꿀차 유자차 커피 차 과일청`,
+  // 동물
+  `강아지 고양이 토끼 여우 곰 판다 수달 햄스터 병아리 나비 호랑이 사자 코끼리 기린 얼룩말 원숭이 고릴라 캥거루
+   코알라 펭귄 돌고래 고래 상어 거북이 악어 개구리 두꺼비 도마뱀 다람쥐 청설모 두더지 고슴도치 너구리 오소리 사슴
+   노루 염소 양 소 말 돼지 닭 오리 거위 백조 공작새 부엉이 올빼미 까치 까마귀 참새 비둘기 제비 독수리 갈매기
+   앵무새 홍학 벌 개미 잠자리 매미 반딧불이 무당벌레 달팽이 해파리 문어 오징어 꽃게 새우 불가사리 조개 물개 북극곰
+   늑대 치타 표범 하마 코뿔소 낙타 알파카 미어캣 족제비 햇병아리 아기곰`,
+  // 식물
+  `장미 튤립 라일락 국화 수선화 민들레 허브 나무 해바라기 코스모스 진달래 개나리 철쭉 동백꽃 무궁화 백합 수국
+   안개꽃 카네이션 목련 벚나무 소나무 대나무 은행나무 단풍나무 느티나무 버드나무 선인장 다육이 이끼 클로버 네잎클로버
+   강아지풀 억새 갈대 연꽃 매화 모란 작약 제비꽃 들꽃 꽃다발 꽃봉오리 새싹 잎사귀 나뭇잎 솔방울 도토리 열매 씨앗
+   뿌리 줄기 꽃잎 꽃밭 화단`,
+  // 자연·날씨·계절
+  `봄 여름 가을 겨울 벚꽃 장마 눈송이 바람 햇살 노을 안개 소나기 가랑비 이슬비 함박눈 진눈깨비 우박 천둥 번개
+   무지개 태풍 폭염 한파 서리 이슬 고드름 낙엽 단풍 첫눈 봄비 꽃샘추위 무더위 열대야 해돋이 해넘이 보름달 초승달
+   반달 별똥별 은하수 바닷가 파도 모래 조약돌 절벽 폭포 계곡 동굴 화산 빙하 사막 초원 섬 해변 갯벌 언덕 오솔길
+   들판 호수 강 산 바다 숲 달 비 빛 하늘 구름 해 별 눈 바위 시냇물 물결 물안개 일출 일몰 황혼 여명 달빛 별빛
+   햇볕 우주 행성 별자리 은하 혜성 유성 태양 인공위성 망원경 블랙홀 고요 산들바람 봄바람`,
+  // 장소
+  `카페 서점 편의점 식당 공원 병원 회사 회의실 작업실 스튜디오 도서관 도시 야경 신호등 횡단보도 골목길 골목 공항
+   호텔 우체국 은행 약국 미용실 빵집 꽃집 문구점 세탁소 시장 백화점 마트 영화관 미술관 박물관 수족관 동물원
+   놀이공원 경기장 체육관 수영장 정류장 터미널 항구 등대 궁궐 성 광장 분수대 전망대 옥탑방 다락방 거실 부엌 욕실
+   베란다 마당 정원 지붕 창고 놀이터 시골 동네 이웃 마을 캠핑장 휴게소 주차장 온천 비밀기지`,
+  // 탈것
+  `자전거 버스 택시 기차 지하철 비행기 헬리콥터 요트 잠수함 트럭 오토바이 킥보드 유모차 케이블카 열기구 로켓 우주선
+   마차 썰매 트램 유람선 구급차 소방차 경찰차 기관차 돛단배 뗏목 스쿠터 여객선 고속버스`,
+  // 직업
+  `작가 화가 가수 배우 감독 기자 의사 간호사 약사 교사 요리사 제빵사 경찰관 소방관 우체부 농부 어부 목수 미용사
+   사진가 조종사 승무원 기관사 편집자 번역가 디자이너 프로그래머 과학자 연구원 변호사 판사 건축가 정원사 사서 성우
+   무용수 연주자 지휘자 작곡가 운동선수 코치 심판 수의사 바리스타 파티시에 선장 탐험가 우주비행사 발명가 마술사
+   아이돌 웹툰작가`,
+  // 감정
+  `기쁨 슬픔 분노 두려움 놀람 설렘 긴장 안도 위로 행복 즐거움 외로움 그리움 부끄러움 뿌듯함 서운함 억울함 답답함
+   후련함 섭섭함 반가움 고마움 미안함 쑥스러움 든든함 편안함 따뜻함 두근거림 조바심 자신감 감동 감사 열정 호기심
+   신남 평온 만족 기대감 걱정 후회 희망 절망 질투 불안 기대 용기 결심 선택 질문 대답 온기 미소 눈물 웃음소리`,
+  // 몸
+  `머리 이마 눈썹 코 입 귀 볼 턱 목 어깨 팔 팔꿈치 손목 손가락 손톱 허리 등 무릎 다리 발목 발가락 발바닥 심장
+   뼈 근육 피부 머리카락 입술 혀 이빨 보조개 주근깨 손바닥 눈동자 속눈썹 콧등 정수리 손끝 숨 체온 눈빛 표정
+   목소리 향기 습관 버릇`,
+  // 옷·꾸미기
+  `티셔츠 셔츠 블라우스 치마 바지 청바지 반바지 원피스 코트 패딩 점퍼 조끼 스웨터 카디건 후드티 잠옷 양말 운동화
+   구두 샌들 장화 모자 목도리 장갑 넥타이 벨트 안경 선글라스 귀걸이 목걸이 반지 팔찌 머리띠 리본 단추 지퍼 주머니
+   앞치마 우비 털모자 귀마개 손목시계 브로치 머리핀 가면`,
+  // 색
+  `빨강 주황 노랑 초록 파랑 남색 보라 분홍 하양 검정 회색 갈색 하늘색 연두 청록 자주 금색 은색 베이지 살구색
+   연보라 연분홍 진초록 무지갯빛 색감`,
+  // 학교
+  `교수 강의 수업 과제 발표 토론 팀플 시험 답안 성적 방학 캠퍼스 교실 복도 옥상 운동장 동아리 축제 공연 전시
+   연습실 교과서 공책 연필 지우개 필통 책가방 칠판 분필 급식 매점 시간표 쪽지 숙제 받아쓰기 졸업 입학 개학 소풍
+   수학여행 체육복 교복 반장 짝꿍 선배 후배 학생 선생님 출석부 성적표 필기 복습 예습 자습 모의고사 중간고사
+   기말고사 장학금 기숙사 수강신청`,
+  // 회사
+  `회의 보고서 기획서 결재 출장 야근 회식 명함 사원 대리 과장 부장 팀장 사장 월급 연봉 휴가 연차 점심시간 복사기
+   프린터 사무실 업무 협업 메일 서류 도장 거래처 신입 인턴 승진 워크숍 일정 목표 계획 체크리스트 루틴 타이머 성취
+   보상`,
+  // 취미
+  `독서 그림 요리 뜨개질 자수 원예 등산 낚시 캠핑 여행 수집 퍼즐 보드게임 종이접기 서예 도예 목공 악기 노래방
+   볼링 당구 탁구 배드민턴 영화감상 음악감상 필사 스티커 인형 모형 드라이브 반려동물 사진첩 다이어리`,
+  // 운동
+  `축구 야구 농구 배구 테니스 골프 수영 달리기 마라톤 줄넘기 요가 필라테스 스키 스노보드 스케이트 태권도 유도 검도
+   씨름 체조 역도 양궁 펜싱 조깅 스트레칭 팔굽혀펴기 윗몸일으키기 턱걸이 줄다리기 피구 이어달리기 스쿼트 플랭크 서핑
+   암벽등반 운동회`,
+  // 음악
+  `노래 춤 리듬 멜로디 화음 박자 가사 플레이리스트 이어폰 피아노 기타 바이올린 첼로 플루트 드럼 하모니카 탬버린
+   트럼펫 색소폰 오카리나 우쿨렐레 실로폰 캐스터네츠 합창 독창 연주회 음표 악보 음반 후렴 전주 간주 고음 저음
+   콘서트 오케스트라 뮤지컬 오페라 자장가 동요 발라드 재즈 앙코르`,
+  // 영화·방송
+  `영화 화면 장면 음악 조명 클로즈업 롱테이크 몽타주 카메라 컷 씬 편집 방송 라디오 인터뷰 무대인사 예고편 자막
+   더빙 주연 엑스트라 촬영 개봉 시사회 매표소 상영관 감독판 명장면 엔딩 속편 시리즈 애니메이션 다큐멘터리 시나리오
+   대본 리허설 녹화 생방송 시청률 무대 데뷔 연습 웹툰 소설 게임`,
+  // 게임
+  `퀘스트 던전 보물 길드 레벨 경험치 아이템 보스 스테이지 세이브 로딩 캐릭터 체력 마나 스킬 장비 인벤토리 랭킹
+   점수 콤보 미션 튜토리얼 협동 대결 무승부 역전 한판 주사위 카드 체스 바둑 장기 윷놀이 공기놀이 숨바꼭질 술래잡기
+   끝말잇기 가위바위보 보물찾기`,
+  // 판타지
+  `왕관 기사 공주 황제 마탑 용 드래곤 요정 마녀 정령 연금술 검술 궁수 마법사 사제 도적 기사단 마법진 주문 부적
+   수정구 마력 결계 봉인 소환 성검 방패 갑옷 투구 망토 지팡이 마법서 유니콘 불사조 거인 난쟁이 엘프 용사 마왕
+   전설 예언 왕국 제국 성채 비밀통로 보석 황금 은화 금화 마법 저주 환상 왕자 여왕 탑 문 비밀 성좌 검 기도 각인
+   계약 운명 진실 망각`,
+  // 웹소설
+  `회귀 빙의 환생 계약결혼 정략결혼 운명론 짝사랑 주인공 조연 악역 조력자 비밀친구 첫사랑 재회 이별 고백편지 플롯
+   설정 세계관 인물 관계 사건 복선 떡밥 전환 결말 반전 클리셰 서사 장르 로맨스 판타지 현대물 무협 미스터리 스릴러
+   코미디 드라마 독자 댓글 추천 조회수 표지 제목 부제 연재 공모전 출간 계약서 마감 원고 퇴고 교정 교열 초고 개고
+   문장 문단 대사 독백 먼치킨 사이다 외전 후기 완결 연중 휴재 선작 유료화 무료분 단행본 삽화 원작 각색 시놉시스
+   에피소드 프롤로그 에필로그 챕터 남주 여주 서브남주 악녀 황녀 공작 영애 후작 백작 대공 영지 가문 후계자 연독률
+   분량 연참 기억상실 기억 상실 화해 포옹 입맞춤 손잡기 약혼 결혼식 신혼여행 시나리오작가 미완성 완성 시작 끝맺음
+   도전 실패 성공 성장 변화 발견 영감 집중 휴식`,
+  // 소리·모양
+  `두근두근 반짝반짝 살금살금 싱글벙글 방긋방긋 꼬르륵 쨍그랑 우당탕 퐁당 보슬보슬 주룩주룩 쿨쿨 새근새근 폴짝폴짝
+   깡충깡충 뒤뚱뒤뚱 데굴데굴 빙글빙글 몽글몽글 말랑말랑 폭신폭신 보송보송 뽀송뽀송 바삭바삭 쫀득쫀득 아삭아삭 후루룩
+   냠냠 꿀꺽 콩닥콩닥 두둥실 살랑살랑 소곤소곤 도란도란 알콩달콩 티격태격 오순도순 옹기종기 반들반들 몽실몽실 사뿐사뿐
+   성큼성큼 느릿느릿 꼼지락 꾸벅꾸벅 방실방실 생글생글 째깍째깍 딩동댕 토닥토닥 부슬부슬 쓱싹쓱싹 반짝`,
+  // 말·마음
+  `사랑 고백 구원 침묵 불꽃 그림자 상처 오해 거리 초대 도망 추격 폭풍 인사 안녕 고마워 미안해 괜찮아 수고했어
+   힘내자 잘했어 파이팅 반가워 축하해 사랑해 좋아요 멋져요 최고 기적 우연 필연 가능성 시간 공간 차원 미래 과거
+   현재 순간 폭파 수다 대화 공감 리액션 하트 박수 축하 응원 농담 장난 약속장소 꿈 소원 행운 추억 비밀일기`,
+  // 때·날
+  `설날 추석 명절 생일 기념일 새해 크리스마스 어린이날 한가위 대보름 단오 입춘 연말 연초 하루 이틀 사흘 나흘
+   일주일 오늘 내일 어제 모레 지금 나중 요즘 오전 오후 자정 정오 초침 분침 주말여행 휴가철 방학숙제`,
+].join(' ').trim().split(/\s+/)));
+// SUDA_0926B ④ 보너스 30개(이모지 + 짧은 말 · 치는 글자는 이모지를 뗀 말 — 서로 겹치지 않게)
 const ACID_BONUS_POOL_ = [
-  '✨보너스','⚡스피드','💎잭팟','🔥콤보','🌟이벤트','🎯정답','🧪산성','☔폭우',
-  '🚀가속','🎁선물','👑크라운','🍀행운','🫧버블','💫별빛'
+  '✨보너스','⚡스피드','💎잭팟','🔥콤보','🌟이벤트','🎯정답','🧪산성','☔폭우','🚀가속','🎁선물',
+  '👑크라운','🍀행운','🫧버블','💫별빛','🌈무지개','🍭사탕','🎉축하','💖하트','🌙달빛','🍩도넛',
+  '🧁컵케이크','🎈풍선','🎵음표','📚원고','🐣병아리','🌸벚꽃','🍓딸기','🦋나비','🐳고래','🎀리본'
 ];
 
-function acidPickWord_(used){
+// SUDA_0926B ④ 단어 뽑기: 판마다 덱 — 판이 바뀌면 풀을 새로 섞고 앞에서부터 뽑아 버린다(다 쓰면 다시 섞기) → 한 판 안에서 같은 단어가 되풀이되지 않는다.
+//   화면에 떠 있는 글자(used — 보너스 포함, 치는 글자 기준)는 건너뛴다. 처음 20초는 3음절 이하, 60초까지 4음절 이하, 그 뒤는 섞인 그대로.
+//   덱은 기기마다 따로(단어는 원래 사람마다 따로 떨어진다) · 점수 규칙은 그대로.
+function acidShuffledIdx_(n){
+  const a = Array.from({ length: n }, (_, i)=> i);
+  for (let i = n - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; }
+  return a;
+}
+function acidNewDeck_(key){ return { key: String(key || ''), order: acidShuffledIdx_(ACID_POOL_.length), i: 0 }; }
+function acidDeckDraw_(deck, used, maxLen){
   const pool = ACID_POOL_;
-  if(!pool.length) return '단어';
-  const picked = used || new Set();
-  const tries = Math.min(pool.length * 2, 80);
-  for(let i=0; i<tries; i++){
-    const w = pool[Math.floor(Math.random() * pool.length)] || '단어';
-    if(!picked.has(w)){
-      picked.add(w);
-      return w;
+  if (!pool.length) return '단어';
+  for (let pass = 0; pass < 2; pass++){
+    if (deck.i >= deck.order.length){ deck.order = acidShuffledIdx_(pool.length); deck.i = 0; }   // 다 썼으면 다시 섞기
+    let pick = -1, alt = -1;
+    for (let j = deck.i, end = Math.min(deck.order.length, deck.i + 200); j < end; j++){
+      const w = pool[deck.order[j]];
+      if (used && used.has(w)) continue;
+      if (alt < 0) alt = j;
+      if (w.length <= maxLen){ pick = j; break; }
     }
+    if (pick < 0) pick = alt;
+    if (pick < 0){ deck.i = deck.order.length; continue; }   // 남은 칸이 다 화면에 떠 있다 → 새로 섞어 한 번 더
+    const t = deck.order[deck.i]; deck.order[deck.i] = deck.order[pick]; deck.order[pick] = t;   // 고른 단어를 앞으로 당겨 뽑고 버린다
+    const w = pool[deck.order[deck.i++]] || '단어';
+    if (used) used.add(w);
+    return w;
   }
-  const fallback = pool[Math.floor(Math.random() * pool.length)] || '단어';
-  picked.add(fallback);
-  return fallback;
+  return pool[Math.floor(Math.random() * pool.length)] || '단어';
+}
+function acidPickWord_(used, cur){
+  const key = String((cur && cur.id) || '');
+  if (!acidUi_.deck || acidUi_.deck.key !== key) acidUi_.deck = acidNewDeck_(key);   // 판이 바뀌면 새 덱
+  const started = Number(cur && cur.startedAt || 0);
+  const el = started ? Math.max(0, acidNow_() - started) : 99999;
+  return acidDeckDraw_(acidUi_.deck, used, el < 20000 ? 3 : (el < 60000 ? 4 : 99));
 }
 
 
@@ -6637,8 +6771,36 @@ function acidScheduleOverlayRefresh_(delay = 120){
   }, delay);
 }
 
+// ── SUDA_0926B ③ 산성비 시각·판 판정 ──
+// H3 기기 시계: 판 시각(startedAt·endsAt)은 서버 시각으로 쓰고 읽는다(시작·렌더·틱·종료·진행 판정 모두 acidNow_).
+//   .info/serverTimeOffset = 연결할 때 SDK가 잰 '서버 - 이 기기' 차이(이 기기에만 있는 값 · 내려받는 데이터 없음). 떨어지는 움직임은 기기 시계 그대로.
+let acidClockOffset_ = 0;
+let acidClockUnsub_ = null;
+function acidNow_(){ return Date.now() + (Number(acidClockOffset_) || 0); }
+function initAcidClock_(){
+  if (acidClockUnsub_) return;   // 방과 무관한 값 — 방이 바뀌어도 하나만
+  try{
+    acidClockUnsub_ = window.FB.onValue(window.FB.ref(window.FB.db, '.info/serverTimeOffset'), (snap)=>{
+      const v = Number(snap && snap.val ? snap.val() : 0);
+      acidClockOffset_ = Number.isFinite(v) ? v : 0;
+    });
+  }catch(e){}
+}
+function acidEndsAt_(c){ return Number(c && c.endsAt || 0) || (Number(c && c.startedAt || 0) + ACID_LIMIT_MS_); }
+// H2: 진행 중 = running이고 끝 시각이 안 지났다. 끝 시각이 지난 running(시작한 사람이 끝나기 전에 나가 굳은 판)은 끝난 판 — 렌더·안내·시작 판정 모두
+function acidIsLive_(c){ return !!(c && c.status === 'running' && acidEndsAt_(c) > acidNow_()); }
+// 끝났어야 할 판을 한 번 정리한다 — 방금 끝났으면 보통 종료(알림 한 번), ACID_STALE_MS_ 넘게 지났으면 조용히(acidTryEnd_)
+function acidSettleExpired_(c){
+  if (!c || c.status !== 'running' || !c.id || acidIsLive_(c)) return;
+  acidTryEnd_(String(c.id));
+}
+function acidSnapVal_(res){ try{ return (res && res.snapshot && typeof res.snapshot.val === 'function') ? (res.snapshot.val() || {}) : {}; }catch(e){ return {}; } }
+// H5: 점수에 쓰는 이름 = 확정된 닉(없으면 익명) — 닉이 없어도 참가는 된다
+function acidName_(){ return (nickConfirmed_ ? String(myName() || '') : '').slice(0,12) || '익명'; }
+
 function initAcidRain_(roomId){
   try{
+    initAcidClock_();   // SUDA_0926B ③ H3
     const curRef = window.FB.ref(window.FB.db, fbAcidCurrentPath_(roomId));
     if (acidCurUnsub_) acidCurUnsub_();
     acidCurUnsub_ = window.FB.onValue(curRef, (snap)=>{
@@ -6669,11 +6831,8 @@ function initAcidRain_(roomId){
 
 function openAcidStart_(){
   // 3단계: 산성비 패널 — 진행 중이면 게임 화면, 아니면 설명 + [시작하기]
+  // SUDA_0926B ③ H5: 여는 것(보기·참가)은 닉이 없어도 막지 않는다 — 이름은 새 판을 시작할 때만 묻고, 점수 이름은 확정된 닉(없으면 익명)
   if (!sessionId) return;
-  if (!isNickConfigured_()){
-    askNick_();
-    return;
-  }
   openPanel_('acid');
 }
 
@@ -6692,12 +6851,13 @@ function acidRender_(){
   const me = (meUid && acidPlayers_ && acidPlayers_[meUid]) ? (acidPlayers_[meUid]||{}) : {};
   const myScore = Number(me.score||0) || 0;
 
-  const now = Date.now();
-  const running = !!(cur && cur.status === 'running');
+  const now = acidNow_();   // SUDA_0926B ③ H3: 서버 시각
+  const running = acidIsLive_(cur);   // SUDA_0926B ③ H2: 끝 시각이 지난 running은 끝난 판(죽은 게임 화면을 그리지 않는다)
   const startedAt = Number(cur?.startedAt||0) || now;
   const endsAt = Number(cur?.endsAt||0) || (startedAt + ACID_LIMIT_MS_);
   const remainMs = Math.max(0, endsAt - now);
   try{ const tag = $('sudaAcidTag'); if (tag) tag.hidden = !running; }catch(e){}
+  if (!running) acidSettleExpired_(cur);   // 끝났어야 할 판은 한 번 정리(한참 지났으면 조용히)
 
   // ✅ 게임 중이고 패널이 열려 있으면 작은 칸만 갱신(스테이지를 다시 그리면 떨어지던 단어가 사라진다)
   try{
@@ -6733,17 +6893,18 @@ function acidGameHtml_(remainMs, myScore){
     </div>
     <div class="acidStage" id="acidStage" aria-label="산성비 게임 화면"></div>
     <div class="acidInputRow"><input id="acidInput" class="mkw-field" placeholder="떨어지는 단어를 치고 Enter · Space" autocomplete="off" spellcheck="false" enterkeyhint="done" aria-label="산성비 입력칸" /><button id="acidClear" type="button" class="mkw-btn">지우기</button></div>
-    <div class="mkw-card acidBoard"><div class="mkw-card-title">${ic_('trophy')}<span>순위</span><span class="mkw-card-aside"><span class="mkw-hint">맞히면 +1 · 반짝이는 단어 +3</span></span></div><div id="acidBoard">${acidRankHtml_()}</div></div>`;
+    <div class="mkw-card acidBoard"><div class="mkw-card-title">${ic_('trophy')}<span>순위</span><span class="mkw-card-aside"><span class="mkw-hint">맞히면 +1 · 반짝이는 단어 +3</span></span></div><div id="acidBoard">${acidRankHtml_()}</div></div>
+    <div class="suda-acid-alt"><span class="mkw-hint">모두 같은 판 · 끝나면 순위가 방에 올라가요</span><button type="button" class="mkw-btn is-ghost is-sm" data-action="acidRestart">새 판 시작</button></div>`;
 }
 function acidIntroHtml_(cur){
-  const ended = !!(cur && cur.status === 'ended');
+  const ended = !!(cur && cur.id && !acidIsLive_(cur));   // SUDA_0926B ③ H2: 끝 시각이 지난 running도 '지난 판'
   const demo = [['마감', 10, 22], ['퇴고', 60, 38], ['원고', 32, 70], ['연재', 72, 94], ['플롯', 8, 112], ['떡밥', 46, 130]];
   return `
     <div class="mkw-card"><p class="suda-desc">떨어지는 단어를 바닥에 닿기 전에 쳐서 막아요. 한 판 <b>120초</b> · 맞히면 +1, 반짝이는 단어는 +3.</p></div>
     <div class="suda-acid-demo" aria-hidden="true"><span class="suda-acid-demo-top">점수 0 · 2:00</span>${demo.map(([w, x, y])=> `<span class="suda-acid-drop" style="left:${x}%;top:${y}px">${ic_('drop')}${w}</span>`).join('')}<i class="suda-acid-ground"></i><span class="suda-acid-in">${ic_('keyboard')}단어를 쳐서 막아요</span></div>
     ${ended ? `<div class="mkw-card acidBoard"><div class="mkw-card-title">${ic_('trophy')}<span>지난 판 순위</span></div><div id="acidBoard">${acidRankHtml_()}</div></div>` : ''}
     <button type="button" class="mkw-btn is-primary is-block" data-action="acidStart">${ic_('play')}시작하기</button>
-    <p class="mkw-hint">게임은 창 안에서 열려요 · 진행 중인 판이 있으면 한 번 더 물어봐요</p>`;
+    <p class="mkw-hint">게임은 창 안에서 열려요 · 누가 먼저 시작했으면 그 판에 같이 들어가요</p>`;
 }
 
 function acidRankHtml_(){
@@ -6858,11 +7019,11 @@ function acidStartLoop_(){
     }
     xs.sort((a,b)=>a-b);
 
-    const used = new Set(Array.from(acidUi_.active.values()).map((it)=>String(it?.w || '')));
+    const used = new Set(Array.from(acidUi_.active.values()).map((it)=> acidNormAcid_(String(it?.w || ''))));   // SUDA_0926B ④ 치는 글자 기준(보너스와도 안 겹치게)
     acidUi_.waveId = (acidUi_.waveId||0) + 1;
     for (let i=0;i<n;i++){
       if (acidUi_.active.size >= maxN) break;
-      const w = acidPickWord_(used);
+      const w = acidPickWord_(used, cur);   // SUDA_0926B ④ 판마다 덱
       const fallMs = Math.max(2600, Math.round(baseFall * (0.75 + Math.random()*0.95))); // 느림~빠름
       const id = `w${acidUi_.waveId}_${i}_${now}`;
       const it = { id, w, xPct: xs[i], spawnAt: now, fallMs, points: 1, isEvent:false, state:'live' };
@@ -6875,7 +7036,10 @@ function acidStartLoop_(){
     if (acidUi_.active.size >= ACID_MAX_ACTIVE_) return;
     // 이벤트 단어는 전체 속도(2배 느림) 영향을 받지 않게 원래 체감 속도로
     const baseFall = (Number(cur.fallMs||0) || ACID_FALL_MS_);
-    const w = ACID_BONUS_POOL_[Math.floor(Math.random()*ACID_BONUS_POOL_.length)] || 'BONUS';
+    // SUDA_0926B ④ 화면에 같은 글자(보통 단어 포함)가 떠 있으면 다른 보너스로
+    const onScreen = new Set(Array.from(acidUi_.active.values()).map((it)=> acidNormAcid_(String(it?.w || ''))));
+    let w = 'BONUS';
+    for (let k = 0; k < 8; k++){ w = ACID_BONUS_POOL_[Math.floor(Math.random()*ACID_BONUS_POOL_.length)] || 'BONUS'; if (!onScreen.has(acidNormAcid_(w))) break; }
     const x = 8 + Math.floor(Math.random()*80);
     const fallMs = Math.max(1600, Math.round(baseFall * (0.40 + Math.random()*0.20))); // 빠르게
     const points = 3;
@@ -6905,7 +7069,7 @@ function acidStartLoop_(){
     const now = Date.now();
     const startedAt = Number(cur.startedAt||0) || now;
     const endsAt = Number(cur.endsAt||0) || (startedAt + ACID_LIMIT_MS_);
-    const remainMs = Math.max(0, endsAt - now);
+    const remainMs = Math.max(0, endsAt - acidNow_());   // SUDA_0926B ③ H3: 남은 시간은 서버 시각(떨어지는 움직임은 기기 시계 그대로)
 
     // The old loop kept requesting an end transaction on every animation frame after 0 seconds.
     // Stop locally first and make one atomic close attempt for this game only.
@@ -7097,7 +7261,7 @@ async function acidIncScore_(delta){
     const uid = myUid_();
     if (!uid) return;
 
-    const nm = myName().slice(0,12) || '익명';
+    const nm = acidName_();   // SUDA_0926B ③ H5: 확정된 닉(없으면 익명)
     const pRef = window.FB.ref(window.FB.db, fbAcidPlayerPath_(sessionId, uid));
 
     const dd = Math.round(Number(delta||0) || 0);
@@ -7107,7 +7271,7 @@ async function acidIncScore_(delta){
       p = p || {};
       const score0 = Number(p.score||0) || 0;
       const score = Math.max(0, score0 + dd);
-      return Object.assign({}, p, { name: nm, score, ts: Date.now() });
+      return Object.assign({}, p, { name: nm, score, ts: acidNow_() });
     });
 
     // reflect quickly in UI (optimistic)
@@ -7138,12 +7302,15 @@ async function acidTryEnd_(expectedGameId){
       if (!cur || cur.status !== 'running') return;
       if (String(cur.id || '') !== gameId) return;
       const endsAt = Number(cur.endsAt||0) || 0;
-      if (!endsAt || Date.now() < endsAt) return;
-      return Object.assign({}, cur, { status:'ended', endedAt: Date.now() });
+      const tNow = acidNow_();   // SUDA_0926B ③ H3: 서버 시각 — 시계가 빠른 기기가 남의 판을 일찍 끝내지 않게
+      if (!endsAt || tNow < endsAt) return;
+      // SUDA_0926B ③ H2: 끝 시각이 한참 지난 판(시작한 사람이 끝나기 전에 나가 굳은 판)은 조용히 닫는다
+      return Object.assign({}, cur, { status:'ended', endedAt: tNow }, (tNow - endsAt > ACID_STALE_MS_) ? { endedQuiet: true } : {});
     });
 
     // Only the client that actually changed running -> ended announces the result.
     if (res && res.committed){
+      if (acidSnapVal_(res).endedQuiet) return;   // SUDA_0926B ③ H2: 한참 지난 판은 결과 알림을 다시 올리지 않는다
       try{ await pushSystem_(`☔ 산성비 종료! (120초) — 점수판을 확인해 보세요 🎯`); }catch(e){}
       try{ await acidPublishPodium_(gameId); }catch(e){}
     }
@@ -7205,9 +7372,13 @@ async function acidPublishPodium_(expectedGameId){
   }catch(e){}
 }
 
-async function startAcidRain_(){
+// SUDA_0926B ③ H4: 기본 단추 [시작하기]는 '시작 또는 참가'(opts.joinIfLive) — 진행 중인 판이 있으면(동시에 누른 다른 사람 판 포함) 지우지 않고 그 판에 들어간다.
+//   남의 판을 지우는 확인("새 판을 시작할까요?")은 게임 화면의 보조 단추 [새 판 시작](인자 없이 = 예전 그대로)에서만 뜬다.
+async function startAcidRain_(opts){
   if (!sessionId) return;
+  const joinIfLive = !!(opts && opts.joinIfLive);
   if (!isNickConfigured_()){
+    if (joinIfLive && acidIsLive_(acidCur_)){ openAcidGame_(); return; }   // 참가는 닉 없이도(H5)
     askNick_();   // 2단계: 설정 패널 '내 이름'으로 안내
     return;
   }
@@ -7216,8 +7387,8 @@ async function startAcidRain_(){
   const makeCur = ()=>({
     id: (Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
     status: 'running',
-    startedAt: Date.now(),
-    endsAt: Date.now() + ACID_LIMIT_MS_,
+    startedAt: acidNow_(),   // SUDA_0926B ③ H3: 판 시각은 서버 시각으로 쓴다
+    endsAt: acidNow_() + ACID_LIMIT_MS_,
     limitMs: ACID_LIMIT_MS_,
     spawnMs: ACID_SPAWN_MS_,
     fallMs: ACID_FALL_MS_,
@@ -7231,11 +7402,21 @@ async function startAcidRain_(){
     if (sid !== sessionId || isStopped) return;
     const root = window.FB.ref(window.FB.db, fbAcidPath_(sid));
     // ⑫ 진행 중인 판(동시에 누른 다른 사람 판 포함)을 덮어쓰지 않는다: 트랜잭션으로 확인 → 확인 뒤에만 덮어쓰기
+    // SUDA_0926B ③: 부모 노드(acidRain) 트랜잭션은 첫 호출이 null일 수 있다(자식만 구독 중이라 부모 캐시가 없음) → 서버가 되돌리면 실제 값으로 다시 돈다.
+    //   그 사이 헛판이 내 화면에 잠깐 비치지 않게 applyLocally:false(끝난 뒤 한 번 반영).
     const res = await window.FB.runTransaction(root, (node)=>{
-      if (isGameRunning_(node && node.current, ACID_LIMIT_MS_)) return;   // abort — 진행 중
+      if (acidIsLive_(node && node.current)) return;   // abort — 진행 중(끝 시각이 지난 running은 덮어써도 된다)
       return { current: cur, players: {} };
-    });
+    }, { applyLocally: false });
     if (!res || !res.committed){
+      if (joinIfLive){
+        // 진행 중인 판에 참가 — 구독이 아직 못 따라왔어도 트랜잭션이 본 서버 값으로 바로 그린다
+        try{ const node = acidSnapVal_(res); if (acidIsLive_(node.current) && String(acidCur_?.id || '') !== String(node.current.id || '')){ acidCur_ = node.current; acidPlayers_ = node.players || {}; } }catch(e){}
+        if (sid !== sessionId || isStopped) return;
+        openAcidGame_();
+        showToast('진행 중인 판에 같이 들어왔어요', 1800, 'info');
+        return;
+      }
       // 제목에 '산성비'를 넣지 않는다: 산성비 화면은 제목에 '산성비'가 있으면 점수 갱신마다 다시 그려져(acidScheduleOverlayRefresh_) 이 확인 창을 덮는다
       const ok = await suConfirm_({
         title: '☔ 새 판을 시작할까요?',
@@ -10336,9 +10517,15 @@ document.addEventListener('click', (e)=>{
     else log.appendChild(el);
   }
   // 스크롤 정책: 바닥 근처를 보고 있을 때만 자동으로 내리고, 위로 올려 읽는 중이면 그대로 + "새 메시지 N"
+  // SUDA_0926B ①: 바닥 스크롤은 다음 프레임에 한 번으로 모은다 — 처음 받을 때 수천 줄이 연달아 오면 줄마다 scrollHeight를 읽어(강제 레이아웃) O(n²)이었다.
+  //   실시간 한 줄도 그 프레임(그리기 전)에 내려가므로 보이는 동작은 그대로. 그 사이 위로 올렸으면 내리지 않는다.
+  let logScrollRaf_ = 0;
   function scrollAfterAppend_(log){
     if (autoScroll_){
-      log.scrollTop = log.scrollHeight;
+      if (!logScrollRaf_) logScrollRaf_ = requestAnimationFrame(()=>{
+        logScrollRaf_ = 0;
+        try{ const lg = $('log'); if (lg && autoScroll_) lg.scrollTop = lg.scrollHeight; }catch(e){}
+      });
     }else{
       unreadCount_ = Math.min(999, unreadCount_ + 1);
       showJumpBtn_(true);
@@ -11152,7 +11339,7 @@ document.addEventListener('click', (e)=>{
         acidEndTimer_ = setTimeout(()=>{
           acidEndTimer_ = null;
           try{ if (!isStopped && acidCur_ && String(acidCur_.id || '') === gid) acidTryEnd_(gid); }catch(e){}
-        }, Math.max(0, endsAt - Date.now()) + 400);
+        }, Math.max(0, endsAt - acidNow_()) + 400);   // SUDA_0926B ③ H3 서버 시각
       }
     }catch(e){}
   }
@@ -11160,7 +11347,9 @@ document.addEventListener('click', (e)=>{
     $('sudaAcidBody')?.addEventListener('click', (ev)=>{
       const b = ev.target && ev.target.closest ? ev.target.closest('[data-action]') : null;
       if (!b) return;
-      if (b.getAttribute('data-action') === 'acidStart'){ try{ startAcidRain_(); }catch(e){} }
+      const act = b.getAttribute('data-action');
+      if (act === 'acidStart'){ try{ startAcidRain_({ joinIfLive: true }); }catch(e){} }   // SUDA_0926B ③ H4: 기본 = 시작 또는 참가
+      else if (act === 'acidRestart'){ try{ startAcidRain_(); }catch(e){} }              // 보조: 새 판(진행 중이면 확인)
     });
   }
 
@@ -11946,6 +12135,10 @@ document.addEventListener('click', (e)=>{
       gate: gateMode_, musicTab: musicTab_, acidOpen: acidPanelOpen_, raceDismissed: raceDismissedId_, soundBlocked: soundBlocked_,
       lightbox: !($('sudaLightbox')?.hidden ?? true), imeGuardMs: IME_GUARD_MS_ }),
     myProfile: ()=> myProfile_(),
+    // SUDA_0926B ③④ 읽기 전용: 산성비 서버 시각 · 단어 풀 · 새 덱에서 n개 뽑아 보기(판의 덱은 건드리지 않음 · 앞 shortN개는 3음절 이하 단계)
+    acidNow: ()=> acidNow_(),
+    acidWords: ()=> ({ pool: ACID_POOL_.slice(), bonus: ACID_BONUS_POOL_.slice() }),
+    acidDeckSample: (n, shortN)=>{ const d = acidNewDeck_('sample'); const out = []; for (let i = 0; i < Number(n || 0); i++) out.push(acidDeckDraw_(d, null, i < Number(shortN || 0) ? 3 : 99)); return out; },
     setNow: (fn)=>{ nowFn_ = (typeof fn === 'function') ? fn : (()=> Date.now()); },
     now: ()=> now_(),
     ping: ()=> joinOrPing_(),
