@@ -8,9 +8,9 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%A3%3C/text%3E%3C/svg%3E">
   <!-- 공통 창 부품(공통창_mkw/sync_mkw.py가 채운다 — 여기서 고치지 말 것) -->
   <style id="mkw-css">
-/* mkw.css v1.1.0 · sha256 37d28887 — 공통창_mkw/sync_mkw.py가 넣음(여기서 고치지 말고 원본을 고친 뒤 다시 sync) */
+/* mkw.css v1.2.1 · sha256 00ff91a0 — 공통창_mkw/sync_mkw.py가 넣음(여기서 고치지 말고 원본을 고친 뒤 다시 sync) */
 /* ═══════════════════════════════════════════════════════════════════════
-   mkw.css — 마끝마 공통 창 부품 v1.1.0 (뽀모·수다방 → 나중에 작업방 창)
+   mkw.css — 마끝마 공통 창 부품 v1.2.1 (뽀모·수다방 → 나중에 작업방 창)
    · 원본은 공통창_mkw/mkw.css 하나. 앱 HTML의 style#mkw-css 안은
      sync_mkw.py가 통째로 덮어쓴다 → 거기서 직접 고치지 말 것.
      (이 파일은 HTML 안에 그대로 들어가므로 주석에도 닫는 style 태그 글자를 쓰지 않는다)
@@ -470,8 +470,35 @@ button.mkw-chip:hover{background:var(--w-surface2); border-color:var(--w-line2)}
   .mkw-input,.mkw-field{font-size:16px}
 }
 
-/* ── 12. hidden 속성 — 부품의 display보다 늦게·세게(!important 없이) ── */
-.mkw[hidden],.mkw [hidden],.mkw-pill[hidden],.mkw-pagebg [hidden]{display:none}
+/* ── 12. 작업방 안 떠 있는 창(iframe · 규약 v1) — 자식 .mkw-embedded(MKW.embed) · 부모 틀 .mkw-hostwin · 접힌 알약 .mkw-hostpill(MKW.embedHost) ── */
+/* 자식: 창이 iframe을 꽉 채운다 — 가운데 정렬·폭 프리셋·페이지 바탕·바깥 둥근 모서리·그림자는 부모 틀이 맡는다 */
+.mkw-embedded,.mkw-embedded body{height:100%; margin:0; overflow:hidden}
+.mkw-embedded .mkw-pagebg{min-height:0; background:var(--w-bg-solid)}
+.mkw-embedded .mkw--page{--mkw-page-gap:0px; width:100%; height:100vh; height:100dvh; margin:0; border:0; border-radius:0; box-shadow:none}
+.mkw-embedded .mkw--page .mkw-head{cursor:grab; touch-action:none}
+.mkw-embedded .mkw--page .mkw-head.is-dragging{cursor:grabbing}
+/* 부모 틀: .mkw.mkw-hostwin + MKW.float(.mkw--float · 둥근 18 · 그림자 · 손잡이 8) — 좁으면 .mkw--sheet. 접으면 숨기기만(iframe은 산다) */
+.mkw-hostwin{background:var(--w-bg-solid)}
+.mkw-hostwin-frame{flex:1 1 auto; display:block; width:100%; min-height:0; margin:0; padding:0; border:0; background:var(--w-bg-solid)}
+.mkw-hostwin.is-min{visibility:hidden; pointer-events:none}
+.mkw-hostwin.is-resizing > .mkw-hostwin-frame{pointer-events:none}
+/* 대비 줄(v1.2.1): 자식이 ready를 안 보낼 때 틀 맨 위(iframe 위)에 얹는다 — 앱 아이콘 · 문구 · [다시 불러오기] [닫기](좁으면 단추가 다음 줄로).
+   손잡이(z 8) 아래 · 떠 있는 창이면 오른쪽 위 손잡이를 비키고 빈 곳 끌기 = 창 옮기기 */
+.mkw-hostwin-fail{position:absolute; left:0; right:0; top:var(--mkw-sat); z-index:7; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; padding:10px 12px; background-color:var(--w-bg-solid); background-image:linear-gradient(var(--w-warn-soft), var(--w-warn-soft)); border-bottom:1px solid var(--w-line2); box-shadow:var(--w-shadow-sm); color:var(--w-text); font-size:13px; font-weight:700; line-height:1.4}
+.mkw-hostwin-fail-t{flex:1 1 150px; min-width:0; overflow-wrap:anywhere}
+.mkw-hostwin-fail > .mkw-btns{margin-left:auto}
+.mkw--float > .mkw-hostwin-fail{padding-right:26px; cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none}
+.mkw--float.is-dragging > .mkw-hostwin-fail{cursor:grabbing}
+/* 접힌 알약: .mkw-pill 모양 + 자리(끌기) · 시간·단계 · 새 메시지 수 · 음악 재생 표시 */
+.mkw-hostpill{position:fixed; left:16px; top:16px; max-width:calc(100vw - 16px)}
+.mkw-hostpill.is-dragging{cursor:grabbing}
+.mkw-hostpill .mkw-pill-t{max-width:12em; overflow:hidden; text-overflow:ellipsis}
+.mkw-hostpill-sub{font-size:12px; font-weight:600; color:var(--w-text3); white-space:nowrap}
+.mkw-hostpill-play{display:inline-flex; color:var(--w-acc-text)}
+.mkw-hostpill-play .mkIc{width:16px; height:16px}
+
+/* ── 13. hidden 속성 — 부품의 display보다 늦게·세게(!important 없이) ── */
+.mkw[hidden],.mkw [hidden],.mkw-pill[hidden],.mkw-pill [hidden],.mkw-pagebg [hidden]{display:none}
 </style>
   <!-- 수다방 앱 CSS(2단계 새 화면) — mkw 뒤에(같은 특이도면 뒤가 이긴다) -->
   <style id="suda-css">
@@ -855,14 +882,23 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
 .suda-acc-now > b{font-weight:700; overflow-wrap:anywhere}
 .suda-acc-dot{flex:0 0 auto; width:20px; height:20px; border-radius:50%; background:rgb(var(--acc3rgb)); border:2px solid var(--w-surface); box-shadow:0 0 0 1px var(--w-line2)}
 .suda-acc-hint .mkIc{width:13px; height:13px; margin:0 2px 0 1px; vertical-align:-2px; color:var(--w-text2)}
+
+/* ── 5단계 창 모드(작업방 안 떠 있는 창 = iframe · html.mkw-embedded는 MKW.embed.init이 창 마크업보다 먼저 붙인다). 창 모드가 아니면 아래는 아무것도 안 바꾼다 ── */
+.suda-embed-only{display:none}
+html.mkw-embedded .mkw-ibtn.suda-embed-only{display:inline-flex}
+html.mkw-embedded .mkw-hint.suda-embed-only{display:block}
+html.mkw-embedded .suda-wide-only{display:none}   /* 창 폭 줄 대신 "창 크기는 가장자리를 끌어 바꿔요" */
+/* 안내 화면 동안에도 창 단추([—][✕])는 남긴다 — 앱 단추만 접는다 */
+html.mkw-embedded #sudaApp[data-gate]:not([data-gate="boom"]) .mkw-hbtns{display:flex}
+html.mkw-embedded #sudaApp[data-gate]:not([data-gate="boom"]) .mkw-hbtns > :not(.suda-embed-only){display:none}
   </style>
 </head>
 
 <body class="mkw-pagebg suda-page">
 <script id="mkw-js">
-/* mkw.js v1.1.0 · sha256 13277ff3 — 공통창_mkw/sync_mkw.py가 넣음(여기서 고치지 말고 원본을 고친 뒤 다시 sync) */
+/* mkw.js v1.2.1 · sha256 1fa1af10 — 공통창_mkw/sync_mkw.py가 넣음(여기서 고치지 말고 원본을 고친 뒤 다시 sync) */
 /* ═══════════════════════════════════════════════════════════════════════
-   mkw.js — 마끝마 공통 창 부품 런타임 v1.1.0 (의존성 없음 · ES2017 · window.MKW)
+   mkw.js — 마끝마 공통 창 부품 런타임 v1.2.1 (의존성 없음 · ES2017 · window.MKW)
    · 원본은 공통창_mkw/mkw.js 하나. 앱 HTML의 script#mkw-js 안은 sync_mkw.py가 덮어쓴다.
    · 모든 UI는 넘겨받은 "창 뿌리(root)" 안에 그린다(페이지 body가 아님) — 작업방 창에 넣을 때를 위해.
    · 두 번 로드돼도 안전: 먼저 올라온 쪽이 이긴다(버전이 다르면 콘솔 경고만).
@@ -873,10 +909,11 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
      5 토스트 · 6 패널 · 7 시트 · 8 작은 부품(seg · sw · range · autoGrow · pwEye)
      9 떠 있는 창(float) · 10 색(nameColor · adaptColor) · 11 형식(fmt)
      12 포인트 색(accent — 작업방 V235 mk_accent_v1 구조 · picker)
+     13 작업방 안 떠 있는 창(iframe) — 자식 embed · 부모 embedHost(창 모드 신호 규약 v1)
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
-  var VERSION = '1.1.0';
+  var VERSION = '1.2.1';
   if (window.MKW && window.MKW.version) {
     if (window.MKW.version !== VERSION) console.warn('[mkw] v' + window.MKW.version + '이(가) 이미 있어 v' + VERSION + '은(는) 건너뜀');
     return;
@@ -1511,7 +1548,7 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
   };
 
   /* ═══ 9. 떠 있는 창 — float(win, {key, handle, min, bounds, scale, presets, onChange})
-         → {set, preset, toggleBig, get, refresh, destroy}
+         → {set, preset, toggleBig, get, refresh, drag, destroy}
          · 머리 끌기(단추 위 제외) · 8방향 크기 조절(왼쪽·위쪽은 자리 이동 포함) · 머리 빈 곳 두 번 누르기 = 크게↔원래
          · 머리 48px은 늘 보이게 · 바깥(창·부모) 크기가 바뀌면 안으로 되돌림(원래 자리는 기억) · 축소 안에서는 scale()로 보정 ═══ */
   const FLOATS = new WeakMap();
@@ -1671,6 +1708,21 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
       return big;
     };
     api.refresh = () => { if (!drag) apply(); return api.get(); };
+    /* drag(phase, dx, dy) — 바깥(iframe 자식의 머리 끌기 중계 등)이 잰 끌기 양(화면 px, 시작점 기준)으로 옮긴다.
+       'start' → 'move'… → 'end'(자리 저장). 규칙은 머리 끌기와 같다(48px 남김 · 축소 보정) · 안에서 끄는 중이면 무시 */
+    let ext = null;
+    api.drag = (phase, dx, dy) => {
+      if (drag) return api.get();
+      if (phase === 'start' || !ext) {
+        ext = { r0: Object.assign({}, cur || fit(want, bounds(), inside)), L: bounds(), s: sc() };
+        win.classList.add('is-dragging');
+        if (phase === 'start') return api.get();
+      }
+      const r0 = ext.r0, mx = (+dx || 0) / ext.s, my = (+dy || 0) / ext.s;
+      put(fit({ x: r0.x + mx, y: r0.y + my, w: r0.w, h: r0.h }, ext.L, false));
+      if (phase === 'end') { ext = null; win.classList.remove('is-dragging'); commit(); }
+      return api.get();
+    };
     const onResize = () => { if (!drag) apply(); };
     let ro = null;
     api.destroy = () => {
@@ -1856,10 +1908,11 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
   function accSave(hex) { const n = normHex(hex); if (n) lsSet(ACC_KEY, n); return n; }
   /* 같은 오리진의 다른 탭·창(작업방 ↔ 수다)이 저장하면 따라간다 — key null = 저장소 통째 비움 */
   function onAccStorage(e) { if (e.key === ACC_KEY || e.key === null) accApply(accLoad(), null, 'storage'); }
-  /* 허용 오리진이 보낸 {type:'mk:accent', hex}만 — hex가 null·''이면 기본으로 */
+  /* 허용 오리진이 보낸 {type:'mk:accent', hex}만 — hex가 null·''이면 기본으로. 작업방 창 안(MKW.embed 활성)이면 부모 창이 보낸 것만 */
   function onAccMessage(e) {
     const m = e.data;
     if (!m || typeof m !== 'object' || m.type !== 'mk:accent' || A.origins.indexOf(e.origin) < 0) return;
+    if (EMB.on && e.source !== window.parent) return;
     if (m.hex == null || m.hex === '') { lsDel(ACC_KEY); accApply(null, null, 'message'); return; }
     const n = accSave(m.hex);
     if (n) accApply(n, null, 'message');
@@ -1951,11 +2004,450 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
     return self.api;
   };
 
+  /* ═══ 13. 작업방 안 떠 있는 창(iframe) — 창 모드 신호 규약 v1
+         · 모든 메시지 {type, v:1, …}. 받는 쪽은 event.origin(허용 오리진) + event.source(짝 창)를 둘 다 본다.
+           보낼 때 targetOrigin은 정확한 오리진(와일드카드 금지).
+         · 자식 → 부모: mkw:ready {app} · mkw:drag {phase:'start'|'move'|'end', dx, dy} · mkw:toggleBig · mkw:minimize · mkw:close
+                        · mkw:status {title, sub, time?, phase?, unread?, playing?} · mkw:count {people}
+         · 부모 → 자식: mk:accent {hex}(MKW.accent가 받는다) · mkw:visibility {state:'open'|'minimized'} · mkw:focus ═══ */
+  const EMB_PARENT = 'https://magammm1009.github.io';                                   /* 작업방 */
+  const EMB_CHILDREN = ['https://mkm-pp-mm00.web.app', 'https://magammm1009.github.io']; /* 뽀모 · 수다 */
+  const isMsg = (d) => !!d && typeof d === 'object' && typeof d.type === 'string';
+  const ST_KEYS = { title: 's', sub: 's', time: 's', phase: 's', unread: 'n', playing: 'b' };
+  /* status 값 정리(양쪽 공용) — 아는 칸만 · 글자는 80자까지 · unread는 0 이상 정수 · playing은 참/거짓 */
+  function stClean(o) {
+    const r = {};
+    if (!o || typeof o !== 'object') return r;
+    Object.keys(ST_KEYS).forEach((k) => {
+      const v = o[k], t = ST_KEYS[k];
+      if (v == null || v === '') return;
+      r[k] = t === 's' ? String(v).slice(0, 80) : t === 'n' ? Math.max(0, Math.min(99999, Math.floor(+v || 0))) : !!v;
+    });
+    return r;
+  }
+
+  /* ── 13-1. 자식(앱) — MKW.embed · 주소에 embed=1이 있고 iframe 안일 때만 켜진다(우연히 켜지지 않게). 꺼져 있으면 전부 아무것도 안 한다 ── */
+  const EMB = { on: false, app: '', parent: EMB_PARENT, handle: '.mkw-head', fns: {}, st: null, stPend: null, stAt: 0, stTm: null, people: undefined, drag: null, lastTap: 0, lastXY: null };
+  let embActive = false;
+  try { embActive = new URLSearchParams(window.location.search).get('embed') === '1' && window.top !== window.self; } catch (x) { embActive = false; }
+  function embSend(type, data) {
+    if (!EMB.on) return false;
+    try { window.parent.postMessage(Object.assign({}, data || {}, { type, v: 1 }), EMB.parent); return true; } catch (x) { return false; }
+  }
+  function embFlush() {
+    EMB.stTm = null;
+    if (!EMB.stPend) return;
+    const s = EMB.stPend;
+    EMB.stPend = null; EMB.st = JSON.stringify(s); EMB.stAt = Date.now();
+    embSend('mkw:status', s);
+  }
+  /* 머리 끌기 중계 — 머리의 빈 곳(단추·입력 제외)에서 누르면 포인터를 잡고, 누른 곳 기준 screenX/Y 차이를 보낸다
+     (창이 포인터를 따라 움직여도 화면 좌표는 흔들리지 않는다). 4px 안 움직였으면 누르기 → 두 번이면 toggleBig */
+  function embDown(e) {
+    if (!EMB.on || e.button !== 0 || EMB.drag) return;
+    const t = e.target, hd = t && t.closest ? t.closest(EMB.handle) : null;
+    if (!hd || t.closest(NODRAG)) return;
+    EMB.drag = { id: e.pointerId, el: hd, sx: e.screenX, sy: e.screenY, dx: 0, dy: 0, moved: false };
+    try { hd.setPointerCapture(e.pointerId); } catch (x) { /* 캡처 못 해도 move는 온다 */ }
+    hd.addEventListener('pointermove', embMove);
+    hd.addEventListener('pointerup', embUp);
+    hd.addEventListener('pointercancel', embUp);
+    hd.addEventListener('lostpointercapture', embUp);
+    e.preventDefault();
+  }
+  function embMove(e) {
+    const d = EMB.drag;
+    if (!d || e.pointerId !== d.id) return;
+    d.dx = e.screenX - d.sx; d.dy = e.screenY - d.sy;
+    if (!d.moved) {
+      if (Math.abs(d.dx) + Math.abs(d.dy) < 4) return;
+      d.moved = true; d.el.classList.add('is-dragging');
+      embSend('mkw:drag', { phase: 'start', dx: 0, dy: 0 });
+    }
+    embSend('mkw:drag', { phase: 'move', dx: d.dx, dy: d.dy });
+  }
+  function embUp(e) {
+    const d = EMB.drag;
+    if (!d || (e.pointerId !== undefined && e.pointerId !== d.id)) return;
+    EMB.drag = null;
+    const h = d.el;
+    h.removeEventListener('pointermove', embMove); h.removeEventListener('pointerup', embUp);
+    h.removeEventListener('pointercancel', embUp); h.removeEventListener('lostpointercapture', embUp);
+    h.classList.remove('is-dragging');
+    try { if (h.hasPointerCapture && h.hasPointerCapture(d.id)) h.releasePointerCapture(d.id); } catch (x) { /* 이미 풀림 */ }
+    if (d.moved) {
+      if (e.type === 'pointerup') { d.dx = e.screenX - d.sx; d.dy = e.screenY - d.sy; }
+      embSend('mkw:drag', { phase: 'end', dx: d.dx, dy: d.dy });
+      EMB.lastTap = 0;
+      return;
+    }
+    if (e.type !== 'pointerup') return;
+    const now = Date.now();
+    if (now - EMB.lastTap < 400 && EMB.lastXY && Math.abs(e.screenX - EMB.lastXY[0]) < 12 && Math.abs(e.screenY - EMB.lastXY[1]) < 12) { EMB.lastTap = 0; embSend('mkw:toggleBig'); }
+    else { EMB.lastTap = now; EMB.lastXY = [e.screenX, e.screenY]; }
+  }
+  /* 부모(짝 창 · 그 오리진)가 보낸 것만 on() 구독자에게 */
+  function embMsg(e) {
+    if (!EMB.on || e.source !== window.parent || e.origin !== EMB.parent) return;
+    const m = e.data;
+    if (!isMsg(m) || (m.v !== 1 && m.type !== 'mk:accent')) return;
+    if (m.type === 'mkw:visibility' && m.state !== 'open' && m.state !== 'minimized') return;
+    (EMB.fns[m.type] || []).slice().forEach((f) => { try { f(Object.assign({}, m)); } catch (x) { console.error(x); } });
+  }
+  MKW.embed = {
+    get active() { return embActive; },
+    /* init({app, dragHandle:'.mkw-head', parentOrigin}) — html에 mkw-embedded · mkw:ready 전송 · 끌기/두 번 누르기 중계 시작.
+       head에서 불러도 된다(머리는 위임으로 잡는다). parentOrigin 기본 = 작업방 */
+    init(o) {
+      if (!embActive) return MKW.embed;
+      o = o || {};
+      EMB.app = String(o.app || '').slice(0, 20);
+      if (typeof o.parentOrigin === 'string' && o.parentOrigin) EMB.parent = o.parentOrigin;
+      if (typeof o.dragHandle === 'string' && o.dragHandle) EMB.handle = o.dragHandle;
+      doc.documentElement.classList.add('mkw-embedded');
+      if (!EMB.on) { EMB.on = true; doc.addEventListener('pointerdown', embDown); window.addEventListener('message', embMsg); }
+      embSend('mkw:ready', { app: EMB.app });
+      return MKW.embed;
+    },
+    minimize: () => embSend('mkw:minimize'),
+    close: () => embSend('mkw:close'),
+    /* status({title, sub, time, phase, unread, playing}) — 접힌 알약에 보일 내용. 바뀔 때만 · 초당 1회 이하(몰리면 마지막 값을 1초 뒤에) */
+    status(o) {
+      if (!EMB.on) return false;
+      const s = stClean(o), j = JSON.stringify(s);
+      if (j === EMB.st) { EMB.stPend = null; if (EMB.stTm) { clearTimeout(EMB.stTm); EMB.stTm = null; } return false; }
+      EMB.stPend = s;
+      const wait = EMB.stAt + 1000 - Date.now();
+      if (wait <= 0) embFlush(); else if (!EMB.stTm) EMB.stTm = setTimeout(embFlush, wait);
+      return true;
+    },
+    /* count(n) — 접속자 수(바뀔 때만) */
+    count(n) {
+      if (!EMB.on) return false;
+      const v = Math.max(0, Math.floor(+n || 0));
+      if (v === EMB.people) return false;
+      EMB.people = v;
+      return embSend('mkw:count', { people: v });
+    },
+    /* on('mkw:visibility'|'mkw:focus'|'mk:accent', fn(msg)) → 해제 함수 */
+    on(type, fn) {
+      if (!embActive || typeof type !== 'string' || typeof fn !== 'function') return () => {};
+      (EMB.fns[type] = EMB.fns[type] || []).push(fn);
+      return () => { const a = EMB.fns[type] || [], i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); };
+    },
+  };
+
+  /* ── 13-2. 부모(작업방) — MKW.embedHost · 자식 창 틀 .mkw-hostwin(둥근 18 · 그림자 · 8방향 손잡이 · 자리 저장 = MKW.float)
+         + 접힌 알약 .mkw-hostpill. 폭이 sheetAt(760) 이하면 전체 화면 시트(끌기·크기 조절 없음)
+         · z = zBase + 순번(틀·알약 목록 H.zo — 끝없이 오르지 않음) · 자식이 ready를 안 보내면 틀 맨 위에 대비 줄 .mkw-hostwin-fail (v1.2.1) ── */
+  const H = { origins: EMB_CHILDREN.slice(), zBase: 10141, zo: [], theme: 'dark', sheetAt: 760, readyWaitMs: 8000, loadWaitMs: 3000, wins: new Map(), accent: undefined, bound: false, mq: null };
+  function hostOf(src) { let f = null; H.wins.forEach((h) => { if (!f && src && h.iframe.contentWindow === src) f = h; }); return f; }
+  function hostByFrame(el) { let f = null; H.wins.forEach((h) => { if (!f && el && h.iframe === el) f = h; }); return f; }
+  function hostPost(h, type, data) {
+    if (!h.ready || !h.iframe.contentWindow) return false;
+    try { h.iframe.contentWindow.postMessage(Object.assign({}, data || {}, { type, v: 1 }), h.origin); return true; } catch (x) { return false; }
+  }
+  function hostInfo(h) {
+    return { id: h.id, el: h.el, iframe: h.iframe, pill: h.pill, app: h.app, title: h.title, origin: h.origin, state: h.state, ready: h.ready, failed: h.failed,
+      status: Object.assign({}, h.status), people: h.people, mode: h.el.classList.contains('mkw--sheet') ? 'sheet' : 'float', rect: h.float ? h.float.get() : null };
+  }
+  /* z — 틀·알약을 아래→위 목록 하나(H.zo)로 들고 zBase + 순번으로 다시 매긴다(끝없이 오르지 않게 · 작업방 일반 모달 10150 아래에 머문다) */
+  function zPaint() { H.zo.forEach((el, i) => { const v = String(H.zBase + i); if (el.style.zIndex !== v) el.style.zIndex = v; }); }
+  function zTop(el) {
+    const i = H.zo.indexOf(el);
+    if (i >= 0 && i === H.zo.length - 1) return; /* 이미 맨 위 — 자주 불리므로(누르기·초점·0.2초 감시) 아무것도 안 쓴다 */
+    if (i >= 0) H.zo.splice(i, 1);
+    H.zo.push(el);
+    zPaint();
+  }
+  function hostFront(h) { zTop(h.el); }
+  let watchTm = null, watchAE = null;
+  function hostWatch() {
+    const ae = doc.activeElement;
+    if (ae === watchAE) return;
+    watchAE = ae;
+    const h = hostByFrame(ae);
+    if (h && h.state === 'open') hostFront(h);
+  }
+  function hostWatchSync() {
+    const need = H.wins.size >= 2;
+    if (need && !watchTm) watchTm = setInterval(hostWatch, 200);
+    else if (!need && watchTm) { clearInterval(watchTm); watchTm = null; }
+  }
+  function hostMode(h) {
+    if (H.mq && H.mq.matches) {
+      if (h.float) { h.last = h.float.get(); h.float.destroy(); h.float = null; }
+      h.el.classList.remove('mkw--float', 'is-dragging', 'is-resizing', 'is-big');
+      h.el.classList.add('mkw--sheet');
+      ['left', 'top', 'width', 'height'].forEach((p) => h.el.style.removeProperty(p));
+      return;
+    }
+    h.el.classList.remove('mkw--sheet');
+    if (h.float) return;
+    if (h.last) ['x:left', 'y:top', 'w:width', 'h:height'].forEach((p) => { const k = p.split(':'); h.el.style[k[1]] = h.last[k[0]] + 'px'; });
+    /* 부모 쪽 끌기 손잡이는 대비 줄뿐(평소 머리는 자식 안에 있고 끌기는 mkw:drag로 온다) */
+    h.float = MKW.float(h.el, { key: h.key, min: h.min, handle: '.mkw-hostwin-fail' });
+  }
+  function hostPillPlace(h, x, y) {
+    const p = h.pill, de = doc.documentElement;
+    p.style.left = Math.round(clamp(x, 8, de.clientWidth - p.offsetWidth - 8)) + 'px';
+    p.style.top = Math.round(clamp(y, 8, de.clientHeight - p.offsetHeight - 8)) + 'px';
+  }
+  function hostPillPaint(h) {
+    const p = h.pill;
+    if (!p) return;
+    const s = h.status || {}, title = s.title || h.title, n = s.unread || 0;
+    p.setAttribute('data-app', h.app || '');
+    p.querySelector('.mkw-app').innerHTML = MKW.ic(has(ICONS, h.app) ? h.app : 'layers');
+    p.querySelector('.mkw-pill-t').textContent = s.time || title;
+    const sub = p.querySelector('.mkw-hostpill-sub'), subTx = s.time ? s.phase || title : s.phase || s.sub || '';
+    sub.textContent = subTx; sub.hidden = !subTx;
+    const badge = p.querySelector('.mkw-pill-badge');
+    badge.hidden = !n; badge.lastChild.textContent = n > 99 ? '99+' : String(n);
+    p.querySelector('.mkw-hostpill-play').hidden = !s.playing;
+    p.setAttribute('aria-label', title + ' 창 펼치기' + (s.time ? ' · ' + s.time : '') + (s.phase ? ' ' + s.phase : '') + (n ? ' · 새 메시지 ' + n + '개' : '') + (s.playing ? ' · 음악 재생 중' : ''));
+  }
+  /* 접힌 알약 — 끌어서 옮기고(4px 넘게), 누르면 복원 · Enter/Space도 */
+  function hostPillMake(h) {
+    const p = mk('div', 'mkw-pill mkw-hostpill');
+    p.setAttribute('role', 'button'); p.tabIndex = 0; p.setAttribute('data-theme', h.theme); p.setAttribute('data-embed-id', h.id);
+    p.innerHTML = '<span class="mkw-app"></span><span class="mkw-pill-t"></span><span class="mkw-hostpill-sub"></span>' +
+      '<span class="mkw-pill-badge">' + MKW.ic('cmt') + '<span></span></span><span class="mkw-hostpill-play">' + MKW.ic('music') + '</span>';
+    let pd = null;
+    p.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || pd) return;
+      pd = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x: parseFloat(p.style.left) || 0, y: parseFloat(p.style.top) || 0, moved: false };
+      try { p.setPointerCapture(e.pointerId); } catch (x) { /* 캡처 못 해도 된다 */ }
+    });
+    p.addEventListener('pointermove', (e) => {
+      if (!pd || e.pointerId !== pd.id) return;
+      const dx = e.clientX - pd.sx, dy = e.clientY - pd.sy;
+      if (!pd.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+      pd.moved = true; p.classList.add('is-dragging');
+      hostPillPlace(h, pd.x + dx, pd.y + dy);
+    });
+    const up = (e) => {
+      if (!pd || (e.pointerId !== undefined && e.pointerId !== pd.id)) return;
+      const d = pd;
+      pd = null; p.classList.remove('is-dragging');
+      if (d.moved) { h.pillXY = { x: parseFloat(p.style.left), y: parseFloat(p.style.top) }; return; }
+      if (e.type === 'pointerup') hostRestore(h);
+    };
+    p.addEventListener('pointerup', up);
+    p.addEventListener('pointercancel', up);
+    p.addEventListener('lostpointercapture', up);
+    p.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.isComposing) { e.preventDefault(); hostRestore(h); } });
+    doc.body.appendChild(p);
+    return p;
+  }
+  /* 접기 — 틀만 숨기고 iframe은 그대로 둔다(타이머·음악 유지) */
+  function hostMinimize(h) {
+    if (h.state !== 'open') return false;
+    const hadFocus = doc.activeElement === h.iframe;
+    h.state = 'minimized';
+    h.el.classList.add('is-min');
+    if (!h.pill) h.pill = hostPillMake(h);
+    hostPillPaint(h);
+    h.pill.hidden = false;
+    zTop(h.pill);
+    const r = h.float ? h.float.get() : null, de = doc.documentElement;
+    const at = h.pillXY || (r ? { x: r.x, y: r.y } : { x: de.clientWidth - h.pill.offsetWidth - 16, y: de.clientHeight - h.pill.offsetHeight - 16 });
+    hostPillPlace(h, at.x, at.y);
+    hostPost(h, 'mkw:visibility', { state: 'minimized' });
+    if (hadFocus) h.pill.focus({ preventScroll: true });
+    return true;
+  }
+  function hostRestore(h) {
+    if (h.state !== 'minimized') return false;
+    h.state = 'open';
+    h.el.classList.remove('is-min');
+    if (h.pill) h.pill.hidden = true;
+    hostFront(h);
+    if (h.float) h.float.refresh();
+    hostPost(h, 'mkw:visibility', { state: 'open' });
+    hostPost(h, 'mkw:focus');
+    /* iframe 요소.focus()는 크롬에서 부모 activeElement를 이 iframe에 붙박아, 뒤에 다른 창 iframe을 눌러도 안 바뀐다(→ 누른 창이 앞으로 안 옴).
+       창(contentWindow)에 초점을 주면 activeElement는 똑같이 이 iframe이 되고 누르기도 계속 따라간다(v1.2.1) */
+    try { h.iframe.contentWindow.focus(); } catch (x) { /* 초점 못 옮겨도 된다 */ }
+    return true;
+  }
+  function hostClose(h) {
+    if (h.state === 'closed') return false;
+    h.state = 'closed';
+    H.wins.delete(h.id);
+    hostWatchSync();
+    clearTimeout(h.readyTm); clearTimeout(h.loadTm); h.readyTm = h.loadTm = null;
+    H.zo = H.zo.filter((x) => x !== h.el && x !== h.pill);
+    zPaint();
+    if (h.float) { h.float.destroy(); h.float = null; }
+    h.iframe.remove(); h.el.remove();
+    if (h.pill) h.pill.remove();
+    if (typeof h.onClose === 'function') { try { h.onClose(hostInfo(h)); } catch (x) { console.error(x); } }
+    return true;
+  }
+  /* 대비 줄 — 자식이 ready를 안 보낼 때(오류 화면 · 404 · 창 안에서 embed 없는 페이지로 이동) 틀 맨 위(iframe 위)에 얹는다.
+     끌기·접기·닫기 단추가 전부 자식 머리에 있어 이것이 없으면 창을 닫을 길이 없다. ready가 오면 걷는다(새 메시지 종류 없음 — get(id).failed) */
+  function hostFail(h, on) {
+    if (h.state === 'closed' || h.failed === on) return;
+    h.failed = on;
+    let b = h.fail;
+    if (!b) {
+      b = h.fail = mk('div', 'mkw-hostwin-fail');
+      b.setAttribute('role', 'alert');
+      b.innerHTML = '<span class="mkw-app"></span><span class="mkw-hostwin-fail-t"></span><span class="mkw-btns">' +
+        '<button type="button" class="mkw-btn is-pill is-sm" data-act="reload">' + MKW.ic('reset') + '다시 불러오기</button>' +
+        '<button type="button" class="mkw-btn is-pill is-sm" data-act="close">' + MKW.ic('close') + '닫기</button></span>';
+      b.addEventListener('click', (e) => {
+        const t = e.target.closest ? e.target.closest('button[data-act]') : null;
+        if (!t) return;
+        if (t.getAttribute('data-act') === 'close') hostClose(h);
+        else h.iframe.src = h.src; /* 원래 주소(embed=1 포함) — ready가 오면 줄이 걷힌다 */
+      });
+      h.el.insertBefore(b, h.el.firstChild);
+    }
+    if (on) {
+      b.querySelector('.mkw-app').innerHTML = MKW.ic(has(ICONS, h.app) ? h.app : 'layers');
+      b.querySelector('.mkw-hostwin-fail-t').textContent = h.title + ' 창을 불러오지 못했어요';
+    }
+    b.hidden = !on;
+  }
+  /* iframe load마다 — 직전 load 뒤로 새 ready가 없으면 loadWaitMs만 더 기다렸다가 대비 줄. 판정은 순번(ready마다 readySeq++ · load 때 값과 비교).
+     자식은 head에서 ready를 보내므로 정상이면 load보다 먼저 온다(창 안에서 스스로 새로고침해도 새 ready가 온다). 첫 load는 open 뒤 한 번이라도 왔으면 통과 */
+  function hostLoad(h) {
+    if (h.state === 'closed') return;
+    const seq = h.readySeq, fresh = seq !== h.loadSeq;
+    h.loadSeq = seq;
+    clearTimeout(h.loadTm); h.loadTm = null;
+    if (!fresh) h.loadTm = setTimeout(() => { h.loadTm = null; if (h.readySeq === seq) hostFail(h, true); }, H.loadWaitMs);
+  }
+  const lim = (v) => { v = +v; return isFinite(v) ? Math.max(-100000, Math.min(100000, v)) : 0; };
+  /* 자식 메시지 — 짝 iframe(event.source)이 보낸 것 · 그 창의 오리진(event.origin)만 */
+  function hostMsg(e) {
+    const h = hostOf(e.source);
+    if (!h || e.origin !== h.origin) return;
+    const m = e.data;
+    if (!isMsg(m) || m.v !== 1 || m.type.indexOf('mkw:') !== 0) return;
+    const sheet = h.el.classList.contains('mkw--sheet');
+    switch (m.type) {
+      case 'mkw:ready':
+        h.ready = true; h.readySeq++;
+        clearTimeout(h.readyTm); clearTimeout(h.loadTm); h.readyTm = h.loadTm = null;
+        hostFail(h, false);
+        if (typeof m.app === 'string' && /^[a-z][a-z0-9-]{0,19}$/.test(m.app)) { h.app = m.app; h.el.setAttribute('data-app', m.app); }
+        if (H.accent !== undefined) hostPost(h, 'mk:accent', { hex: H.accent });
+        if (h.state === 'minimized') hostPost(h, 'mkw:visibility', { state: 'minimized' });
+        break;
+      case 'mkw:drag':
+        if (sheet || h.state !== 'open' || !h.float || ['start', 'move', 'end'].indexOf(m.phase) < 0) return;
+        if (m.phase === 'start') hostFront(h);
+        h.float.drag(m.phase, lim(m.dx), lim(m.dy));
+        return; /* 너무 잦아서 onMessage로는 안 넘긴다 */
+      case 'mkw:toggleBig':
+        if (sheet || h.state !== 'open' || !h.float) return;
+        h.float.toggleBig(); hostFront(h);
+        break;
+      case 'mkw:minimize': hostMinimize(h); break;
+      case 'mkw:close': hostClose(h); break;
+      case 'mkw:status': h.status = stClean(m); hostPillPaint(h); break;
+      case 'mkw:count': { const n = Math.floor(+m.people); if (!(n >= 0)) return; h.people = Math.min(n, 99999); break; }
+      default: return;
+    }
+    if (typeof h.onMessage === 'function') { try { h.onMessage(Object.assign({}, m), hostInfo(h)); } catch (x) { console.error(x); } }
+  }
+  function hostBind() {
+    if (H.bound) return;
+    H.bound = true;
+    window.addEventListener('message', hostMsg);
+    if (window.matchMedia) {
+      H.mq = window.matchMedia('(max-width:' + H.sheetAt + 'px)');
+      const f = () => H.wins.forEach(hostMode);
+      if (H.mq.addEventListener) H.mq.addEventListener('change', f); else if (H.mq.addListener) H.mq.addListener(f);
+    }
+    /* 두 창 이상 — 누른 창을 앞으로. iframe 안을 누르면 부모엔 pointerdown이 없으니 초점이 그 iframe으로 가는 것을 본다:
+       처음 들어갈 때는 window blur, iframe에서 iframe으로 옮길 때는 부모에 아무 이벤트도 없어서 activeElement를 살핀다(창 2개 이상일 때만 · 0.2초) */
+    doc.addEventListener('focusin', (e) => { const h = hostByFrame(e.target); if (h) hostFront(h); });
+    window.addEventListener('blur', () => setTimeout(hostWatch, 0));
+    window.addEventListener('resize', () => H.wins.forEach((h) => { if (h.pill && !h.pill.hidden) hostPillPlace(h, parseFloat(h.pill.style.left) || 0, parseFloat(h.pill.style.top) || 0); }));
+  }
+  MKW.embedHost = {
+    /* init({origins, zBase:10141, theme:'dark', sheetAt:760, readyWaitMs:8000, loadWaitMs:3000}) — origins = 자식 허용 오리진(시험용 주입).
+       zBase = 틀·알약 z 시작값(작업방: 꿀단지 10140 위 · 일반 모달 10150 아래 — 틀·알약 개수만큼만 쓴다 · 바꾸면 곧바로 다시 매김) · sheetAt은 첫 open 전에만
+       · readyWaitMs = open 뒤 ready를 기다리는 시간 · loadWaitMs = iframe load 뒤 새 ready를 기다리는 시간(넘으면 대비 줄) */
+    init(o) {
+      o = o || {};
+      if (Array.isArray(o.origins)) H.origins = o.origins.filter((x) => typeof x === 'string' && x);
+      if (+o.zBase > 0) { H.zBase = +o.zBase; zPaint(); }
+      if (o.theme === 'light' || o.theme === 'dark') H.theme = o.theme;
+      if (+o.sheetAt > 0 && !H.bound) H.sheetAt = +o.sheetAt;
+      if (+o.readyWaitMs > 0) H.readyWaitMs = +o.readyWaitMs;
+      if (+o.loadWaitMs > 0) H.loadWaitMs = +o.loadWaitMs;
+      return MKW.embedHost;
+    },
+    /* open({id, src, childOrigin, title, app, key, min:[360,480], rect:{x,y,w,h}, theme, onMessage(msg, info), onClose(info)}) → info | null
+       src 오리진 = childOrigin(허용 목록 안)이어야 한다 · 주소에 embed=1을 붙인다 · 이미 열린 id면 앞으로(접혀 있으면 복원) */
+    open(o) {
+      o = o || {};
+      const id = String(o.id || '');
+      if (!id || !doc.body) return null;
+      const old = H.wins.get(id);
+      if (old) { if (old.state === 'minimized') hostRestore(old); else hostFront(old); return hostInfo(old); }
+      const origin = String(o.childOrigin || '');
+      if (H.origins.indexOf(origin) < 0) { console.warn('[mkw] embedHost: 허용 목록에 없는 자식 오리진 — ' + origin); return null; }
+      let url = null;
+      try { url = new URL(String(o.src || ''), window.location.href); } catch (x) { url = null; }
+      if (!url || url.origin !== origin) { console.warn('[mkw] embedHost: src 오리진이 childOrigin과 다르다'); return null; }
+      url.searchParams.set('embed', '1');
+      hostBind();
+      MKW.injectIcons();
+      const title = String(o.title || id);
+      const el = mk('div', 'mkw mkw-hostwin');
+      el.setAttribute('data-theme', o.theme === 'light' || o.theme === 'dark' ? o.theme : H.theme);
+      el.setAttribute('role', 'region'); el.setAttribute('aria-label', title); el.setAttribute('data-embed-id', id);
+      if (o.app) el.setAttribute('data-app', String(o.app));
+      const fr = mk('iframe', 'mkw-hostwin-frame');
+      fr.title = title;
+      fr.setAttribute('allow', 'autoplay; clipboard-write');
+      fr.src = url.href;
+      el.appendChild(fr);
+      const r = o.rect;
+      if (r && typeof r === 'object') ['x:left', 'y:top', 'w:width', 'h:height'].forEach((p) => { const k = p.split(':'); if (isFinite(+r[k[0]]) && r[k[0]] != null) el.style[k[1]] = +r[k[0]] + 'px'; });
+      doc.body.appendChild(el);
+      const h = { id, el, iframe: fr, origin, src: url.href, title, theme: el.getAttribute('data-theme'), app: o.app ? String(o.app) : '', key: o.key || null,
+        min: Array.isArray(o.min) ? o.min : [360, 480], onMessage: o.onMessage, onClose: o.onClose,
+        state: 'open', ready: false, failed: false, fail: null, readySeq: 0, loadSeq: 0, readyTm: null, loadTm: null,
+        status: {}, people: null, float: null, pill: null, pillXY: null, last: null };
+      H.wins.set(id, h);
+      hostWatchSync();
+      el.addEventListener('pointerdown', () => hostFront(h), true);
+      /* 대비 줄 판정(같은 작업 안이라 첫 load를 놓치지 않는다) — open 뒤 readyWaitMs 안에 ready가 한 번도 없거나, load 뒤 새 ready가 없으면 */
+      fr.addEventListener('load', () => hostLoad(h));
+      h.readyTm = setTimeout(() => { h.readyTm = null; if (!h.readySeq) hostFail(h, true); }, H.readyWaitMs);
+      hostMode(h);
+      hostFront(h);
+      return hostInfo(h);
+    },
+    close(id) { const h = H.wins.get(String(id)); return h ? hostClose(h) : false; },
+    get(id) { const h = H.wins.get(String(id)); return h ? hostInfo(h) : null; },
+    minimize(id) { const h = H.wins.get(String(id)); return h ? hostMinimize(h) : false; },
+    restore(id) { const h = H.wins.get(String(id)); return h ? hostRestore(h) : false; },
+    /* setAccent(hex|null) — 열린 모든 자식에 mk:accent(작업방 포인트 색이 바뀔 때) · 나중에 준비된 자식에도 ready 때 보낸다 → 보낸 수 */
+    setAccent(hex) {
+      const n = hex == null || hex === '' ? null : normHex(hex);
+      if (hex != null && hex !== '' && !n) return 0;
+      H.accent = n;
+      let k = 0;
+      H.wins.forEach((h) => { if (hostPost(h, 'mk:accent', { hex: n })) k++; });
+      return k;
+    },
+  };
+
   window.MKW = MKW;
 })();
 </script>
 <script>MKW.accent.init({ follow: true });</script>
 <!-- ↑ 4단계 포인트 색: 작업방이 저장한 mk_accent_v1(같은 오리진)을 창 마크업보다 먼저(첫 페인트 전) 칠하고, 작업방에서 바꾸면 storage 이벤트로 바로 따라간다 -->
+<script>MKW.embed.init({ app: 'suda', dragHandle: '.mkw-head' });</script>
+<!-- ↑ 5단계 창 모드: 작업방이 떠 있는 창(iframe)으로 띄울 때만 켜진다(주소 embed=1 + iframe 안 — 아니면 아무 일도 안 함). html.mkw-embedded를 창 마크업보다 먼저 붙인다 -->
 
 <!-- ═══ 수다방 새 화면(2단계 → 3단계 2026-09-26) — 창 뿌리 #sudaApp(.mkw.mkw--page). 옛 JS가 쓰는 id는 그대로 둔다 ═══ -->
 <div class="mkw mkw--page" id="sudaApp" data-app="suda" aria-label="수다방">
@@ -1966,6 +2458,9 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
       <button type="button" class="mkw-ppl" id="btnOnlineBtn" aria-expanded="false" aria-label="접속자 0명" title="접속자"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-people"></use></svg><span id="onlineCntBtn">0명</span></button>
       <button type="button" class="mkw-ibtn" id="btnMusic" aria-expanded="false" aria-label="음악" title="음악"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-headphones"></use></svg></button>
       <button type="button" class="mkw-ibtn" id="btnSettings" aria-expanded="false" aria-label="설정" title="설정"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-gear"></use></svg></button>
+      <!-- 5단계 창 모드에서만: [—] 접기 · [✕] 닫기(나가기 확인 → 나가기 → 창 닫기) -->
+      <button type="button" class="mkw-ibtn suda-embed-only" id="btnEmbedMin" aria-label="창 접기" title="접기"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-minus"></use></svg></button>
+      <button type="button" class="mkw-ibtn suda-embed-only" id="btnEmbedClose" aria-label="창 닫기" title="닫기"><svg class="mkIc" aria-hidden="true" focusable="false"><use href="#mki-close"></use></svg></button>
     </span>
     <span id="sessLabel" hidden>SESSION: -</span>
   </div>
@@ -2050,6 +2545,7 @@ body.shake #sudaApp{animation:screenShake 520ms ease-in-out}
             <span class="mkw-seg" id="sudaFontSeg" aria-label="글자 크기"><button type="button" data-v="sm">작게</button><button type="button" data-v="md">보통</button><button type="button" data-v="lg">크게</button><button type="button" data-v="xl">아주 크게</button></span></div>
           <div class="mkw-row suda-wide-only"><span class="mkw-row-label">창 폭<small>넓은 화면에서 · 높이는 늘 화면 가득</small></span>
             <span class="mkw-seg" id="sudaWidthSeg" aria-label="창 폭"><button type="button" data-v="sm">좁게</button><button type="button" data-v="md">보통</button><button type="button" data-v="lg">넓게</button></span></div>
+          <p class="mkw-hint suda-embed-only" id="sudaEmbedSizeHint">창 크기는 가장자리를 끌어 바꿔요</p>
           <!-- 포인트 색(4단계): 고르기는 두지 않는다 — 작업방과 저장소가 같아서 여기서 바꾸면 작업방 색도 바뀐다 -->
           <div class="mkw-row suda-acc-row"><span class="mkw-row-label">포인트 색</span>
             <span class="suda-acc-now" id="sudaAccNow"><i class="suda-acc-dot" id="sudaAccDot" aria-hidden="true"></i><b id="sudaAccName">핑크(기본)</b></span></div>
@@ -3438,6 +3934,7 @@ function escapeHtml(s){
   // 읽기 전용이면 "폭파됨 · 새 방 대기".
   function updateBoomCountdown_(){
     try{ const root = sudaRoot_(); if (root && root.toggleAttribute) root.toggleAttribute('data-closed', !!roomClosed_); }catch(e){}
+    try{ pushEmbedStatus_(); }catch(e){}   // 5단계 창 모드: 접힌 알약 상태(아니면 아무것도 안 함)
     try{ syncClosedUi_(); }catch(e){}   // 3단계: 읽기 전용 안내 카드·입력부 비활성(바뀔 때만 그린다)
     const el = $('boomText');
     if (!el) return;
@@ -4542,6 +5039,7 @@ if (cmd === '/나체샤워'){
     logLastSys_ = null;
 
     const mine = isMyMessage_(m);
+    if (!mine){ try{ embedNoteNew_(ts); }catch(e){} }   // 5단계 창 모드: 접혀 있는 동안 온 남의 말 → 알약의 새 메시지 수
     const key = String(m.uid || '') || ('name:' + name);
     const prev = logGroup_;
     const cont = !!(prev && prev.key === key && ts && prev.ts && ts >= prev.ts && (ts - prev.ts) <= GROUP_GAP_MS_ &&
@@ -4731,6 +5229,7 @@ function updateAutoScrollState_(){
       const c = $('onlineCntBtn'); if (c) c.textContent = `${r.count}명`;
       const b = $('btnOnlineBtn'); if (b) b.setAttribute('aria-label', `접속자 ${r.count}명`);
     }catch(e){}
+    try{ if (embedOn_()) MKW.embed.count(r.count); }catch(e){}   // 5단계 창 모드: 사람 수(바뀔 때만 보낸다)
     const sub = $('onlineSub');   // 토대: 요소가 없어도 멈추지 않게(무가드였음)
     if (sub) sub.textContent = `지금 ${r.count}명`;
     try{ renderOnlineList_(); }catch(e){}
@@ -11125,9 +11624,10 @@ document.addEventListener('click', (e)=>{
     try{
       if (mkwOk_()) ok = await MKW.confirm({ root: sudaRoot_(), title: '수다방에서 나갈까요?', message: '연결이 끊겨요. 다시 들어오려면 작업방에서 입장해 주세요.', okText: '나가기', cancelText: '머무르기', icon: 'exit' });
     }catch(e){ ok = true; }
-    if (!ok) return;
+    if (!ok) return false;
     closeSheets_();
     leave_();
+    return true;
   }
 
   // ── 피커 데이터 ──
@@ -11308,6 +11808,63 @@ document.addEventListener('click', (e)=>{
     if (A && typeof A.onChange === 'function') A.onChange(()=>{ try{ renderAccentRow_(); }catch(e){} });
   }
 
+  // ── 5단계 창 모드: 작업방이 수다를 떠 있는 창(iframe)으로 띄울 때만(MKW.embed.active = 주소 embed=1 + iframe 안). 아니면 아무것도 안 한다 ──
+  //    머리 [—] 접기 · [✕] 나가기 확인 → leave_() → 창 닫기 · 안내 화면의 [작업방으로] = 창 닫기(iframe 안에서 같은 탭 이동 금지)
+  //    접힌 알약 상태: 제목 '수다방' · 부제(같이 듣는 곡 제목, 아니면 '자정에 폭파 · hh:mm') · 새 메시지 수(접힌 동안 · 펼치면 0) · 음표(같이 듣는 중)
+  //    접혀도 대화·음악 구독은 그대로(부모는 틀만 숨긴다)
+  let embedVis_ = 'open';
+  let embedUnread_ = 0;
+  function embedOn_(){ try{ return !!(window.MKW && MKW.embed && MKW.embed.active); }catch(e){ return false; } }
+  function embedSub_(){
+    if (roomClosed_) return '폭파됨 · 새 방 대기';
+    const hms = formatHms_(msToNextMidnightSeoul_());
+    return '자정에 폭파 · ' + hms.slice(0, 5);
+  }
+  function pushEmbedStatus_(){
+    if (!embedOn_()) return;
+    const v = bgmRemote_;
+    const has = !!(v && (v.videoId || v.url || v.playlistId) && String(v.kind || 'yt') !== 'file');
+    const paused = !!(v && String(v.state || '') === 'paused');
+    const playing = !!(has && !paused && bgmAllowed_ && musicPlaying_ && !soundBlocked_);   // 같이 듣는 중(소리가 나는 중)
+    const song = playing ? String(musicTitle_ || (v && v.title) || '') : '';
+    MKW.embed.status({ title: '수다방', sub: song || embedSub_(), unread: embedUnread_, playing });
+  }
+  function embedNoteNew_(ts){
+    if (!embedOn_() || embedVis_ !== 'minimized') return;
+    if (joinTs_ && ts && ts < joinTs_ - 500) return;   // 지난 기록(입장·방 전환 때 그리는 것)은 세지 않는다
+    embedUnread_ = Math.min(999, embedUnread_ + 1);
+    pushEmbedStatus_();
+  }
+  let embedClosing_ = false;
+  async function embedCloseAsk_(){
+    if (embedClosing_) return;
+    // 방 안이면 나가기 확인 → 나가기(접속 노드 삭제) → 창 닫기. 입장 전·나간 뒤(안내 화면)면 바로 닫기
+    if (sessionId && !left_){
+      const ok = await confirmLeave_();
+      if (!ok) return;
+    }
+    embedClosing_ = true;
+    setTimeout(()=>{ try{ MKW.embed.close(); }catch(e){} embedClosing_ = false; }, 300);   // 접속 노드 삭제가 나갈 틈
+  }
+  function initEmbed_(){
+    if (!embedOn_()) return;
+    $('btnEmbedMin')?.addEventListener('click', ()=>{ try{ MKW.embed.minimize(); }catch(e){} });
+    $('btnEmbedClose')?.addEventListener('click', ()=>{ embedCloseAsk_(); });
+    $('sudaGateHome')?.addEventListener('click', (e)=>{ e.preventDefault(); try{ MKW.embed.close(); }catch(err){} });   // 작업방 안 창이면 [작업방으로] = 창 닫기
+    MKW.embed.on('mkw:visibility', (m)=>{
+      embedVis_ = (m && m.state === 'minimized') ? 'minimized' : 'open';
+      if (embedVis_ === 'open') embedUnread_ = 0;
+      pushEmbedStatus_();
+    });
+    MKW.embed.on('mkw:focus', ()=>{
+      try{
+        const msg = $('msg');
+        if (msg && !msg.readOnly && !gateMode_ && !topPanelName_() && msg.getClientRects().length) msg.focus();
+      }catch(e){}
+    });
+    pushEmbedStatus_();
+  }
+
   // ── 창 틀 · 뷰포트 ──
   function initMkwShell_(){
     if (!mkwOk_()) return;
@@ -11361,6 +11918,7 @@ document.addEventListener('click', (e)=>{
     try{ initPicker_(); }catch(e){ console.error(e); }
     try{ initSettings_(); }catch(e){ console.error(e); }
     try{ initAccentRow_(); }catch(e){ console.error(e); }
+    try{ initEmbed_(); }catch(e){ console.error(e); }
     try{ initAdminCard_(); }catch(e){ console.error(e); }
     try{ initRacePanel_(); }catch(e){ console.error(e); }
     try{ initAcidPanel_(); }catch(e){ console.error(e); }
